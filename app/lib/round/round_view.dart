@@ -139,60 +139,59 @@ class _RoundViewState extends State<RoundView> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        body: DecoratedBox(
-          decoration: Broadcast.set,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              SafeArea(
-                child: StreamBuilder<LiveRound?>(
-                  stream: widget.rounds,
-                  builder: (context, snap) {
-                    if (!snap.hasData) return const _Standby();
-                    final round = snap.data!;
-                    _resetIfNewSlot(round);
-                    return _Broadcast(
-                      round: round,
-                      clock: widget.clock,
-                      handle: widget.handle,
-                      picked: _picked,
-                      state: _state,
-                      onPick: widget.sink == null
-                          ? null
-                          : (choice) => _answer(round, choice),
-                      boards: widget.boards,
-                      uid: widget.uid,
-                      refusal: widget.refusal,
-                      allTime: widget.allTime,
-                      bots: widget.bots,
-                      points: widget.points,
-                      mine: _mine,
-                      live: _live,
-                      savePrompt: widget.anonymous && !_promptDismissed
-                          ? (score) => _SavePromptSlot(
-                                score: score,
-                                onDismiss: () =>
-                                    setState(() => _promptDismissed = true),
-                              )
-                          : null,
-                    );
-                  },
-                ),
-              ),
-              const Scanlines(),
-            ],
+    body: DecoratedBox(
+      decoration: Broadcast.set,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          SafeArea(
+            child: StreamBuilder<LiveRound?>(
+              stream: widget.rounds,
+              builder: (context, snap) {
+                if (!snap.hasData) return const _Standby();
+                final round = snap.data!;
+                _resetIfNewSlot(round);
+                return _Broadcast(
+                  round: round,
+                  clock: widget.clock,
+                  handle: widget.handle,
+                  picked: _picked,
+                  state: _state,
+                  onPick: widget.sink == null
+                      ? null
+                      : (choice) => _answer(round, choice),
+                  boards: widget.boards,
+                  uid: widget.uid,
+                  refusal: widget.refusal,
+                  allTime: widget.allTime,
+                  bots: widget.bots,
+                  points: widget.points,
+                  mine: _mine,
+                  live: _live,
+                  savePrompt: widget.anonymous && !_promptDismissed
+                      ? (score) => _SavePromptSlot(
+                          score: score,
+                          onDismiss: () =>
+                              setState(() => _promptDismissed = true),
+                        )
+                      : null,
+                );
+              },
+            ),
           ),
-        ),
-      );
+          const Scanlines(),
+        ],
+      ),
+    ),
+  );
 }
 
 class _Standby extends StatelessWidget {
   const _Standby();
 
   @override
-  Widget build(BuildContext context) => Center(
-        child: Text('Tuning in…', style: Broadcast.display(22)),
-      );
+  Widget build(BuildContext context) =>
+      Center(child: Text('Tuning in…', style: Broadcast.display(22)));
 }
 
 class _Broadcast extends StatelessWidget {
@@ -298,72 +297,74 @@ class _Marquee extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
-        builder: (context, box) {
-          final narrow = box.maxWidth < 460;
-          final title = FittedBox(
-            alignment: Alignment.centerLeft,
-            fit: BoxFit.scaleDown,
-            child: Text(
-              "const's quizzes",
-              style: Broadcast.display(narrow ? 24 : 30).copyWith(
-                shadows: const [
-                  Shadow(color: Broadcast.goldDeep, offset: Offset(0, 3)),
-                  Shadow(color: Broadcast.magenta, offset: Offset(2, 5)),
-                ],
-              ),
-            ),
-          );
-          final onAir = Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 9,
-                height: 9,
-                decoration: const BoxDecoration(
-                  color: Broadcast.magenta,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 6),
-              Text('on air',
-                  style: Broadcast.body(12, color: Broadcast.chalkDim)),
+    builder: (context, box) {
+      final narrow = box.maxWidth < 460;
+      final title = FittedBox(
+        alignment: Alignment.centerLeft,
+        fit: BoxFit.scaleDown,
+        child: Text(
+          "const's quizzes",
+          style: Broadcast.display(narrow ? 24 : 30).copyWith(
+            shadows: const [
+              Shadow(color: Broadcast.goldDeep, offset: Offset(0, 3)),
+              Shadow(color: Broadcast.magenta, offset: Offset(2, 5)),
             ],
-          );
-          final who = handle == null
-              ? const SizedBox.shrink()
-              : Text(
-                  handle!,
-                  overflow: TextOverflow.ellipsis,
-                  style: Broadcast.body(12, color: Broadcast.cyan),
-                );
-
-          // At phone width the title, the light and a Handle do not fit on one
-          // line, and squeezing them truncates the Handle to nothing useful.
-          if (narrow) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [Flexible(child: title), onAir],
-                ),
-                if (handle != null) ...[const SizedBox(height: 3), who],
-              ],
-            );
-          }
-          return Row(
-            children: [
-              Expanded(child: title),
-              const SizedBox(width: 12),
-              onAir,
-              if (handle != null) ...[
-                const SizedBox(width: 14),
-                Flexible(child: who),
-              ],
-            ],
-          );
-        },
+          ),
+        ),
       );
+      final onAir = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 9,
+            height: 9,
+            decoration: const BoxDecoration(
+              color: Broadcast.magenta,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text('on air', style: Broadcast.body(12, color: Broadcast.chalkDim)),
+        ],
+      );
+      final who = handle == null
+          ? const SizedBox.shrink()
+          : Text(
+              handle!,
+              overflow: TextOverflow.ellipsis,
+              style: Broadcast.body(12, color: Broadcast.cyan),
+            );
+
+      // At phone width the title, the light and a Handle do not fit on one
+      // line, and squeezing them truncates the Handle to nothing useful.
+      if (narrow) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Flexible(child: title),
+                onAir,
+              ],
+            ),
+            if (handle != null) ...[const SizedBox(height: 3), who],
+          ],
+        );
+      }
+      return Row(
+        children: [
+          Expanded(child: title),
+          const SizedBox(width: 12),
+          onAir,
+          if (handle != null) ...[
+            const SizedBox(width: 14),
+            Flexible(child: who),
+          ],
+        ],
+      );
+    },
+  );
 }
 
 class _ThemeStrip extends StatelessWidget {
@@ -465,47 +466,34 @@ class _Stage extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 22),
-            _PhaseBar(question: question, phase: phase, now: now, points: points),
+            _PhaseBar(
+              question: question,
+              phase: phase,
+              now: now,
+              points: points,
+            ),
             const SizedBox(height: 18),
             // Choices stay hidden while the prompt is being read. Showing them
             // greyed out just means everyone reads them anyway and the read
-            // phase becomes a stare.
-            if (phase == Phase.read)
-              _ReadPhase(narrow: narrow)
-            else
-              _Podiums(
-                choices: question.choices,
-                narrow: narrow,
-                picked: picked,
-                state: state,
-                phase: phase,
-                correct: question.correct,
-                onPick: phase == Phase.answer ? onPick : null,
-              ),
+            // phase becomes a stare. The podiums are still drawn, empty, so
+            // that the Choices arriving does not shove the whole screen
+            // upward three seconds into every Question.
+            _Podiums(
+              ghost: phase == Phase.read,
+              choices: question.choices,
+              narrow: narrow,
+              picked: picked,
+              state: state,
+              phase: phase,
+              correct: question.correct,
+              onPick: phase == Phase.answer ? onPick : null,
+            ),
             const SizedBox(height: 8),
           ],
         );
       },
     );
   }
-}
-
-/// The read phase: the prompt, and nothing to press yet.
-class _ReadPhase extends StatelessWidget {
-  const _ReadPhase({required this.narrow});
-
-  final bool narrow;
-
-  @override
-  Widget build(BuildContext context) => Container(
-        width: double.infinity,
-        padding: EdgeInsets.symmetric(vertical: narrow ? 28 : 40),
-        alignment: Alignment.center,
-        child: Text(
-          'answers in a moment…',
-          style: Broadcast.body(13, color: Broadcast.chalkDim),
-        ),
-      );
 }
 
 /// The one loud thing on screen, and what it says depends on the phase.
@@ -522,25 +510,33 @@ class _PhaseBar extends StatelessWidget {
   final int now;
   final ({int max, int min}) points;
 
+  /// Fixed, because a counter and the points meter are not the same height and
+  /// the difference would nudge the whole page every time a Slot changed
+  /// phase — four times a Question.
+  static const height = 88.0;
+
   @override
-  Widget build(BuildContext context) => switch (phase) {
-        Phase.read => _Counter(
-            seconds: ((question.opensAt - now) / 1000).ceil().clamp(0, 999),
-            label: 'read it',
-            colour: Broadcast.cyan,
-          ),
-        Phase.answer => _PointsMeter(question: question, now: now, points: points),
-        Phase.reveal => _Counter(
-            seconds: ((question.revealUntil - now) / 1000).ceil().clamp(0, 999),
-            label: question.settlingAt(now) ? 'checking…' : 'the answer is',
-            colour: Broadcast.gold,
-          ),
-        Phase.idle => _Counter(
-            seconds: ((question.endsAt - now) / 1000).ceil().clamp(0, 999),
-            label: 'next question in',
-            colour: Broadcast.chalkDim,
-          ),
-      };
+  Widget build(BuildContext context) =>
+      SizedBox(height: height, child: Center(child: _forPhase()));
+
+  Widget _forPhase() => switch (phase) {
+    Phase.read => _Counter(
+      seconds: ((question.opensAt - now) / 1000).ceil().clamp(0, 999),
+      label: 'read it',
+      colour: Broadcast.cyan,
+    ),
+    Phase.answer => _PointsMeter(question: question, now: now, points: points),
+    Phase.reveal => _Counter(
+      seconds: ((question.revealUntil - now) / 1000).ceil().clamp(0, 999),
+      label: question.settlingAt(now) ? 'checking…' : 'the answer is',
+      colour: Broadcast.gold,
+    ),
+    Phase.idle => _Counter(
+      seconds: ((question.endsAt - now) / 1000).ceil().clamp(0, 999),
+      label: 'next question in',
+      colour: Broadcast.chalkDim,
+    ),
+  };
 }
 
 class _Counter extends StatelessWidget {
@@ -556,16 +552,18 @@ class _Counter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Column(
-        children: [
-          Text('$seconds',
-              style: Broadcast.display(40, color: colour).copyWith(
-                shadows: [
-                  Shadow(color: colour.withValues(alpha: 0.5), blurRadius: 18),
-                ],
-              )),
-          Text(label, style: Broadcast.body(11, color: Broadcast.chalkDim)),
-        ],
-      );
+    children: [
+      Text(
+        '$seconds',
+        style: Broadcast.display(40, color: colour).copyWith(
+          shadows: [
+            Shadow(color: colour.withValues(alpha: 0.5), blurRadius: 18),
+          ],
+        ),
+      ),
+      Text(label, style: Broadcast.body(11, color: Broadcast.chalkDim)),
+    ],
+  );
 }
 
 /// The draining points meter, carried over from the terminal game.
@@ -588,29 +586,32 @@ class _PointsMeter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final left = question.remainingAt(now);
-    final worth =
-        (points.min + (points.max - points.min) * left).round();
+    final worth = (points.min + (points.max - points.min) * left).round();
     final seconds = ((question.closesAt - now) / 1000).ceil().clamp(0, 999);
 
     // Warm as it empties, exactly as the terminal version did.
     final colour = left > 0.66
         ? Broadcast.gold
         : left > 0.33
-            ? const Color(0xFFFF9A3C)
-            : Broadcast.magenta;
+        ? const Color(0xFFFF9A3C)
+        : Broadcast.magenta;
     final filled = (left * _cells).round().clamp(0, _cells);
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text('$worth',
-            style: Broadcast.display(30, color: colour).copyWith(
-              shadows: [
-                Shadow(color: colour.withValues(alpha: 0.5), blurRadius: 16),
-              ],
-            )),
-        Text('points, ${seconds}s left',
-            style: Broadcast.body(11, color: Broadcast.chalkDim)),
+        Text(
+          '$worth',
+          style: Broadcast.display(30, color: colour).copyWith(
+            shadows: [
+              Shadow(color: colour.withValues(alpha: 0.5), blurRadius: 16),
+            ],
+          ),
+        ),
+        Text(
+          'points, ${seconds}s left',
+          style: Broadcast.body(11, color: Broadcast.chalkDim),
+        ),
         const SizedBox(height: 7),
         Semantics(
           label: 'worth $worth points, $seconds seconds left',
@@ -651,6 +652,7 @@ class _Podiums extends StatelessWidget {
     required this.phase,
     required this.correct,
     required this.onPick,
+    this.ghost = false,
   });
 
   final List<String> choices;
@@ -661,6 +663,10 @@ class _Podiums extends StatelessWidget {
   final String? correct;
   final void Function(String choice)? onPick;
 
+  /// Draw the podiums with their Choices withheld, at exactly the size they
+  /// will be once shown.
+  final bool ghost;
+
   @override
   Widget build(BuildContext context) {
     final tiles = [
@@ -668,6 +674,7 @@ class _Podiums extends StatelessWidget {
         _Podium(
           index: i,
           label: choice,
+          ghost: ghost,
           chosen: picked == choice,
           state: state,
           phase: phase,
@@ -689,9 +696,7 @@ class _Podiums extends StatelessWidget {
       spacing: 12,
       runSpacing: 12,
       alignment: WrapAlignment.center,
-      children: [
-        for (final t in tiles) SizedBox(width: 330, child: t),
-      ],
+      children: [for (final t in tiles) SizedBox(width: 330, child: t)],
     );
   }
 }
@@ -710,6 +715,7 @@ class _Podium extends StatelessWidget {
     required this.phase,
     required this.isCorrect,
     required this.onTap,
+    this.ghost = false,
   });
 
   final int index;
@@ -720,12 +726,16 @@ class _Podium extends StatelessWidget {
   final bool isCorrect;
   final VoidCallback? onTap;
 
+  /// Same podium, Choice withheld — the read phase.
+  final bool ghost;
+
   static const _keys = ['1', '2', '3', '4'];
   static const _right = Color(0xFF35D17E);
 
   bool get _revealing => phase == Phase.reveal || phase == Phase.idle;
 
   Color get _edge {
+    if (ghost) return Broadcast.podiumEdge.withValues(alpha: 0.45);
     if (_revealing) {
       if (isCorrect) return _right;
       if (chosen) return Broadcast.magenta;
@@ -736,12 +746,14 @@ class _Podium extends StatelessWidget {
   }
 
   double get _dim {
+    if (ghost) return 1;
     if (!_revealing) return 1;
     // Everything that is neither the answer nor your guess steps back.
     return isCorrect || chosen ? 1 : 0.55;
   }
 
   String? get _tag {
+    if (ghost) return null;
     if (_revealing) {
       if (isCorrect && chosen) return 'you got it';
       if (isCorrect) return 'correct';
@@ -771,8 +783,8 @@ class _Podium extends StatelessWidget {
           color: _revealing && isCorrect
               ? const Color(0xFF14402C)
               : chosen
-                  ? Broadcast.setNavy
-                  : Broadcast.podium,
+              ? Broadcast.setNavy
+              : Broadcast.podium,
           child: InkWell(
             onTap: onTap,
             child: Container(
@@ -795,28 +807,42 @@ class _Podium extends StatelessWidget {
                       color: _revealing && isCorrect
                           ? _right
                           : chosen
-                              ? Broadcast.magenta
-                              : Broadcast.gold,
+                          ? Broadcast.magenta
+                          : Broadcast.gold,
                     ),
                     child: Text(
                       _keys[index],
-                      style: Broadcast.body(13,
-                          color: Broadcast.setDeep, weight: FontWeight.w800),
+                      style: Broadcast.body(
+                        13,
+                        color: Broadcast.setDeep,
+                        weight: FontWeight.w800,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
-                  Expanded(child: Text(label, style: Broadcast.body(15))),
+                  Expanded(
+                    child: ghost
+                        // The Choice is withheld, but its line still occupies
+                        // the space, so nothing moves when it arrives.
+                        ? Opacity(
+                            opacity: 0,
+                            child: Text(label, style: Broadcast.body(15)),
+                          )
+                        : Text(label, style: Broadcast.body(15)),
+                  ),
                   if (tag != null)
                     Text(
                       tag,
-                      style: Broadcast.body(11,
-                          color: _revealing && isCorrect
-                              ? _right
-                              : chosen && _revealing
-                                  ? Broadcast.magenta
-                                  : state == Answered.rejected
-                                      ? Broadcast.magenta
-                                      : Broadcast.gold),
+                      style: Broadcast.body(
+                        11,
+                        color: _revealing && isCorrect
+                            ? _right
+                            : chosen && _revealing
+                            ? Broadcast.magenta
+                            : state == Answered.rejected
+                            ? Broadcast.magenta
+                            : Broadcast.gold,
+                      ),
                     ),
                 ],
               ),
@@ -860,8 +886,10 @@ class _Intermission extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final left =
-        ((round.nextRoundAt - clock.nowMs) / 1000).ceil().clamp(0, 9999);
+    final left = ((round.nextRoundAt - clock.nowMs) / 1000).ceil().clamp(
+      0,
+      9999,
+    );
     final next = round.nextTheme;
     final me = mine;
 
@@ -871,11 +899,15 @@ class _Intermission extends StatelessWidget {
         children: [
           const SizedBox(height: 10),
           if (me != null) ...[
-            Text('that round',
-                style: Broadcast.body(12, color: Broadcast.chalkDim)),
+            Text(
+              'that round',
+              style: Broadcast.body(12, color: Broadcast.chalkDim),
+            ),
             const SizedBox(height: 6),
-            Text('${me.score}',
-                style: Broadcast.display(42, color: Broadcast.gold)),
+            Text(
+              '${me.score}',
+              style: Broadcast.display(42, color: Broadcast.gold),
+            ),
             const SizedBox(height: 4),
             Text(
               '${me.correct} of $slots right'
@@ -892,11 +924,16 @@ class _Intermission extends StatelessWidget {
               ),
             ),
           ] else
-            Text('final scores',
-                style: Broadcast.body(14, color: Broadcast.chalkDim)),
+            Text(
+              'final scores',
+              style: Broadcast.body(14, color: Broadcast.chalkDim),
+            ),
           const SizedBox(height: 16),
           if (next != null) ...[
-            Text('next up', style: Broadcast.body(11, color: Broadcast.chalkDim)),
+            Text(
+              'next up',
+              style: Broadcast.body(11, color: Broadcast.chalkDim),
+            ),
             const SizedBox(height: 4),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -983,7 +1020,9 @@ class _BoardState extends State<_Board> {
       return _AllTimePanel(
         careers: _view == 1 ? _careers : _botBoard,
         uid: widget.uid,
-        title: _view == 1 ? 'all time, by average round' : 'bots, by average round',
+        title: _view == 1
+            ? 'all time, by average round'
+            : 'bots, by average round',
         emptyLine: _view == 1
             ? 'Nobody has finished enough rounds yet.'
             : 'No bot has finished enough rounds yet.',
@@ -1054,8 +1093,10 @@ class _RoundPanel extends StatelessWidget {
               Text('leaders', style: Broadcast.body(12, color: Broadcast.gold)),
               Row(
                 children: [
-                  Text('${board.playing} playing',
-                      style: Broadcast.body(12, color: Broadcast.chalkDim)),
+                  Text(
+                    '${board.playing} playing',
+                    style: Broadcast.body(12, color: Broadcast.chalkDim),
+                  ),
                   if (onAllTime != null) ...[
                     const SizedBox(width: 10),
                     _BoardLink(label: 'all time', onTap: onAllTime!),
@@ -1072,8 +1113,10 @@ class _RoundPanel extends StatelessWidget {
                 children: [
                   SizedBox(
                     width: 22,
-                    child: Text('${i + 1}',
-                        style: Broadcast.body(12, color: Broadcast.chalkDim)),
+                    child: Text(
+                      '${i + 1}',
+                      style: Broadcast.body(12, color: Broadcast.chalkDim),
+                    ),
                   ),
                   Expanded(
                     child: Text(
@@ -1081,12 +1124,16 @@ class _RoundPanel extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: Broadcast.body(
                         13,
-                        color: s.uid == uid ? Broadcast.magenta : Broadcast.chalk,
+                        color: s.uid == uid
+                            ? Broadcast.magenta
+                            : Broadcast.chalk,
                       ),
                     ),
                   ),
-                  Text('${s.score}',
-                      style: Broadcast.body(13, color: Broadcast.gold)),
+                  Text(
+                    '${s.score}',
+                    style: Broadcast.body(13, color: Broadcast.gold),
+                  ),
                 ],
               ),
             ),
@@ -1104,12 +1151,12 @@ class _BoardLink extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-          child: Text(label, style: Broadcast.body(12, color: Broadcast.cyan)),
-        ),
-      );
+    onTap: onTap,
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      child: Text(label, style: Broadcast.body(12, color: Broadcast.cyan)),
+    ),
+  );
 }
 
 /// Careers, ranked on average score.
@@ -1149,15 +1196,19 @@ class _AllTimePanel extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Flexible(
-                child: Text(title,
-                    overflow: TextOverflow.ellipsis,
-                    style: Broadcast.body(12, color: Broadcast.gold)),
+                child: Text(
+                  title,
+                  overflow: TextOverflow.ellipsis,
+                  style: Broadcast.body(12, color: Broadcast.gold),
+                ),
               ),
-              Row(children: [
-                _BoardLink(label: nextLabel, onTap: onNext),
-                const SizedBox(width: 8),
-                _BoardLink(label: 'close', onTap: onBack),
-              ]),
+              Row(
+                children: [
+                  _BoardLink(label: nextLabel, onTap: onNext),
+                  const SizedBox(width: 8),
+                  _BoardLink(label: 'close', onTap: onBack),
+                ],
+              ),
             ],
           ),
           const SizedBox(height: 6),
@@ -1176,24 +1227,32 @@ class _AllTimePanel extends StatelessWidget {
                 children: [
                   SizedBox(
                     width: 22,
-                    child: Text('${i + 1}',
-                        style: Broadcast.body(12, color: Broadcast.chalkDim)),
+                    child: Text(
+                      '${i + 1}',
+                      style: Broadcast.body(12, color: Broadcast.chalkDim),
+                    ),
                   ),
                   Expanded(
                     child: Text(
                       c.handle,
                       overflow: TextOverflow.ellipsis,
-                      style: Broadcast.body(13,
-                          color: c.uid == uid
-                              ? Broadcast.magenta
-                              : Broadcast.chalk),
+                      style: Broadcast.body(
+                        13,
+                        color: c.uid == uid
+                            ? Broadcast.magenta
+                            : Broadcast.chalk,
+                      ),
                     ),
                   ),
-                  Text('best ${c.bestRound}',
-                      style: Broadcast.body(11, color: Broadcast.chalkDim)),
+                  Text(
+                    'best ${c.bestRound}',
+                    style: Broadcast.body(11, color: Broadcast.chalkDim),
+                  ),
                   const SizedBox(width: 10),
-                  Text('${c.averageScore}',
-                      style: Broadcast.body(13, color: Broadcast.gold)),
+                  Text(
+                    '${c.averageScore}',
+                    style: Broadcast.body(13, color: Broadcast.gold),
+                  ),
                 ],
               ),
             ),
@@ -1214,26 +1273,25 @@ class _Refused extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        width: double.infinity,
-        margin: const EdgeInsets.only(top: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-        decoration: BoxDecoration(
-          border: Border.all(color: Broadcast.magenta, width: 2),
-        ),
-        child: Text(
-          switch (reason) {
-            'full' => "const's quizzes is at capacity — you're watching. "
-                'A seat opens when the next round starts.',
-            'busy' => 'Lots of people arriving at once. '
-                'Reload in a moment to take a seat.',
-            _ => "The show is on a break. You're watching; "
-                'answering is off for now.',
-          },
-          style: Broadcast.body(12, color: Broadcast.chalk),
-        ),
-      );
+    width: double.infinity,
+    margin: const EdgeInsets.only(top: 8),
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+    decoration: BoxDecoration(
+      border: Border.all(color: Broadcast.magenta, width: 2),
+    ),
+    child: Text(switch (reason) {
+      'full' =>
+        "const's quizzes is at capacity — you're watching. "
+            'A seat opens when the next round starts.',
+      'busy' =>
+        'Lots of people arriving at once. '
+            'Reload in a moment to take a seat.',
+      _ =>
+        "The show is on a break. You're watching; "
+            'answering is off for now.',
+    }, style: Broadcast.body(12, color: Broadcast.chalk)),
+  );
 }
-
 
 /// Wraps [SavePrompt] so the Round view can hand it a score without importing
 /// its state.

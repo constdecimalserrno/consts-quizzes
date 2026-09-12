@@ -58,6 +58,27 @@ const inAnswer = readMs + 2000;
 const inReveal = readMs + answerMs + 1000;
 const inIdle = readMs + answerMs + revealMs + 500;
 
+/// Whether a Choice is actually on screen.
+///
+/// During the read phase the podiums are drawn at full size with their Choices
+/// at zero opacity, so the text is in the tree but invisible. Presence is the
+/// wrong question — the Choices are in the document the client already
+/// downloaded, and concealment was never what paced the game.
+bool _choiceVisible(WidgetTester tester, String text) {
+  final finder = find.text(text);
+  if (finder.evaluate().isEmpty) return false;
+  var visible = true;
+  tester.element(finder).visitAncestorElements((e) {
+    final w = e.widget;
+    if (w is Opacity && w.opacity == 0) {
+      visible = false;
+      return false;
+    }
+    return true;
+  });
+  return visible;
+}
+
 /// Firestore's snapshot streams are broadcast, and the board panels subscribe
 /// and unsubscribe as the viewer switches between them. A single-subscription
 /// stream would throw on the second listen, which is a property of the test
@@ -127,9 +148,34 @@ void main() {
     expect(find.text('What is the capital of France?'), findsOneWidget);
     // Greying them out would just mean everyone reads them anyway.
     for (final c in ['Paris', 'London', 'Rome', 'Berlin']) {
-      expect(find.text(c), findsNothing);
+      expect(_choiceVisible(tester, c), isFalse, reason: c);
     }
     expect(find.text('read it'), findsOneWidget);
+  });
+
+  testWidgets('does not shift the page when the Choices arrive', (tester) async {
+    // The podiums are drawn unlit during the read phase precisely so that the
+    // Choices appearing is text filling in, not the whole screen jumping.
+    final clock = _FixedClock(inRead);
+    final controller = StreamController<LiveRound?>();
+    addTearDown(controller.close);
+    await _pump(tester, controller.stream, clock);
+
+    controller.add(_round(openSlot: 6, now: 0));
+    await tester.pump(Duration.zero);
+    await tester.pump();
+    final whileReading =
+        tester.getTopLeft(find.text('What is the capital of France?'));
+    expect(_choiceVisible(tester, 'Paris'), isFalse);
+
+    clock.fixed = inAnswer;
+    controller.add(_round(openSlot: 6, now: 0));
+    await tester.pump(Duration.zero);
+    await tester.pump();
+    final whileAnswering = tester.getTopLeft(find.text('What is the capital of France?'));
+
+    expect(_choiceVisible(tester, 'Paris'), isTrue);
+    expect(whileAnswering, whileReading);
   });
 
   testWidgets('brings the Choices out when the Window opens', (tester) async {
@@ -387,9 +433,10 @@ void main() {
         sink: sink,
       );
 
-      // There is nothing to press, which is a stronger guarantee than a
-      // disabled button: nobody can answer before they have read the Question.
-      expect(find.text('Rome'), findsNothing);
+      await tester.tap(find.text('Rome'), warnIfMissed: false);
+      await tester.pump();
+
+      expect(_choiceVisible(tester, 'Rome'), isFalse);
       expect(sink.submitted, isEmpty);
     });
 
