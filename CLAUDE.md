@@ -1,4 +1,4 @@
-# const-quizes
+# const's quizzes
 
 An always-on trivia game: Flutter (web first, iOS later) on Firebase.
 See `plan.md` for the brief.
@@ -7,7 +7,7 @@ See `plan.md` for the brief.
 
 ### Issue tracker
 
-Issues live as GitHub issues in `constdecimalserrno/consts-quizes`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+Issues live as GitHub issues in `constdecimalserrno/consts-quizzes`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
