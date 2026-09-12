@@ -325,6 +325,18 @@ void main() {
       expect(find.text('next question in'), findsNothing);
     });
 
+    testWidgets('does not promise a next Question after the last one',
+        (tester) async {
+      await _pump(
+        tester,
+        Stream.value(_round(openSlot: 19, now: 0, correct: 'Paris')),
+        _FixedClock(inIdle),
+      );
+
+      expect(find.text("that's the round"), findsOneWidget);
+      expect(find.text('next question in'), findsNothing);
+    });
+
     testWidgets('counts down to the next Question after the reveal',
         (tester) async {
       await _pump(

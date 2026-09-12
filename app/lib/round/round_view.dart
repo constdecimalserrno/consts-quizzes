@@ -270,6 +270,7 @@ class _Broadcast extends StatelessWidget {
                         state: state,
                         onPick: onPick,
                         points: points,
+                        isLastSlot: q.slot >= round.slotCount - 1,
                       ),
                 if (boards != null)
                   _Board(
@@ -428,6 +429,7 @@ class _Stage extends StatelessWidget {
     required this.state,
     required this.onPick,
     required this.points,
+    required this.isLastSlot,
   });
 
   final OpenQuestion question;
@@ -438,6 +440,9 @@ class _Stage extends StatelessWidget {
 
   /// Scoring bounds, so the meter shows real numbers rather than a guess.
   final ({int max, int min}) points;
+
+  /// Nothing follows this Slot but the Intermission.
+  final bool isLastSlot;
 
   @override
   Widget build(BuildContext context) {
@@ -471,6 +476,7 @@ class _Stage extends StatelessWidget {
               phase: phase,
               now: now,
               points: points,
+              isLastSlot: isLastSlot,
             ),
             const SizedBox(height: 18),
             // Choices stay hidden while the prompt is being read. Showing them
@@ -503,12 +509,14 @@ class _PhaseBar extends StatelessWidget {
     required this.phase,
     required this.now,
     required this.points,
+    required this.isLastSlot,
   });
 
   final OpenQuestion question;
   final Phase phase;
   final int now;
   final ({int max, int min}) points;
+  final bool isLastSlot;
 
   /// Fixed, because a counter and the points meter are not the same height and
   /// the difference would nudge the whole page every time a Slot changed
@@ -516,8 +524,10 @@ class _PhaseBar extends StatelessWidget {
   static const height = 88.0;
 
   @override
-  Widget build(BuildContext context) =>
-      SizedBox(height: height, child: Center(child: _forPhase()));
+  Widget build(BuildContext context) => SizedBox(
+    height: height,
+    child: Center(child: _forPhase()),
+  );
 
   Widget _forPhase() => switch (phase) {
     Phase.read => _Counter(
@@ -530,6 +540,13 @@ class _PhaseBar extends StatelessWidget {
       seconds: ((question.revealUntil - now) / 1000).ceil().clamp(0, 999),
       label: question.settlingAt(now) ? 'checking…' : 'the answer is',
       colour: Broadcast.gold,
+    ),
+    // After the last Slot there is no next Question, and counting down to one
+    // — then sitting on nought while the scores are worked out — says the
+    // wrong thing twice over.
+    Phase.idle when isLastSlot => Text(
+      "that's the round",
+      style: Broadcast.display(20, color: Broadcast.cyan),
     ),
     Phase.idle => _Counter(
       seconds: ((question.endsAt - now) / 1000).ceil().clamp(0, 999),
