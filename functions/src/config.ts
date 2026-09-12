@@ -49,6 +49,8 @@ export type AppConfig = {
    * people stop dropping in — which is the one thing this game is for.
    */
   rankedJoinBySlot: number
+  /** How long an anonymous Player may be idle before the Reaper takes them. */
+  reaperDays: number
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -61,6 +63,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   maxConcurrentPlayers: 120,
   minRankedRounds: 3,
   rankedJoinBySlot: 5,
+  reaperDays: 90,
 }
 
 const positive = (v: unknown, fallback: number): number =>
@@ -95,6 +98,7 @@ export async function readConfig(db: Firestore): Promise<AppConfig> {
     maxConcurrentPlayers: n('maxConcurrentPlayers'),
     minRankedRounds: n('minRankedRounds'),
     rankedJoinBySlot: n('rankedJoinBySlot'),
+    reaperDays: n('reaperDays'),
   }
 
   // A read phase at least as long as the Slot would leave no Window at all, so

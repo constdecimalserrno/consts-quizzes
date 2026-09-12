@@ -13,6 +13,7 @@ import { verdict, type BudgetNotification } from './budget.js'
 import { mergePlayers } from './linking.js'
 import { isOpen, readConfig } from './config.js'
 import { ensurePlayer as ensurePlayerDoc } from './players.js'
+import { reap, type ReaperMode } from './reaper.js'
 import { LIVE_ROUND } from './round.js'
 import { takeSeat } from './seats.js'
 import { tick } from './tick.js'
@@ -142,6 +143,24 @@ export const tickTask = onTaskDispatched(
  */
 export const tickHeartbeat = onSchedule('every 1 minutes', async () => {
   await tick(deps())
+})
+
+/**
+ * The Reaper, daily and deliberately off the hour so it never lands with a
+ * Tick.
+ *
+ * Armed by data rather than by a deploy: `config/app.reaperMode` must say
+ * `reap`, and anything else — including the field being absent — means report
+ * only. The first live run should be read before anything is deleted.
+ */
+export const reaperDaily = onSchedule('17 9 * * *', async () => {
+  const cfg = await readConfig(db())
+  const snap = await db().doc('config/app').get()
+  const mode: ReaperMode =
+    snap.data()?.reaperMode === 'reap' ? 'reap' : 'report'
+
+  const run = await reap({ db: db(), now: Date.now }, mode, cfg.reaperDays)
+  logger.info('reaper run', run)
 })
 
 /**
