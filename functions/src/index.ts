@@ -156,7 +156,13 @@ const schedule = async (at: number): Promise<void> => {
     .enqueue({ at }, { scheduleTime: new Date(at) })
 }
 
-const deps = () => ({ db: db(), now: Date.now, schedule })
+const deps = () => ({
+  db: db(),
+  now: Date.now,
+  schedule,
+  onError: (what: string, err: unknown) =>
+    logger.error(`intermission job failed: ${what}`, err),
+})
 
 export const tickTask = onTaskDispatched(
   { retryConfig: { maxAttempts: 3 }, rateLimits: { maxConcurrentDispatches: 1 } },

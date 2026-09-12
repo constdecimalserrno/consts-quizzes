@@ -5,12 +5,12 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "career.rankedRounds",
+          "fieldPath": "anonymous",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "career.averageScore",
-          "order": "DESCENDING"
+          "fieldPath": "lastSeenAt",
+          "order": "ASCENDING"
         }
       ]
     },
@@ -19,12 +19,16 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "anonymous",
-          "order": "ASCENDING"
+          "fieldPath": "career.averageScore",
+          "order": "DESCENDING"
         },
         {
-          "fieldPath": "lastSeenAt",
-          "order": "ASCENDING"
+          "fieldPath": "career.rankedRounds",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
         }
       ]
     }

@@ -28,6 +28,8 @@ export type TickDeps = {
    * production; a no-op in tests, which call `tick` themselves.
    */
   schedule?: (at: number) => Promise<void>
+  /** Reports a bookkeeping job that failed without stopping the Round. */
+  onError?: (what: string, err: unknown) => void
 }
 
 export type TickResult =
@@ -98,14 +100,14 @@ export async function tick(deps: TickDeps): Promise<TickResult> {
       if (round.question?.correct === undefined) {
         await scoreSlot(db, round, round.openSlot, cfg)
       }
-      await publishLiveBoard(db, round.id, round.openSlot, now)
 
-      // The Round is over, so careers settle now rather than when the next one
-      // starts: the Intermission is exactly when somebody looks at the board.
-      await foldRoundIntoCareers(db, round.id, cfg)
-      await publishAllTimeBoard(db, cfg, now)
-      await publishBotBoard(db, cfg.minRankedRounds, now)
-
+      // Put the game into the Intermission *first*.
+      //
+      // Everything after this is bookkeeping that can be caught up next time;
+      // this line is the only part the audience sees. When it ran last, a
+      // broken leaderboard query threw on the way here and every Round for
+      // days ended by freezing on the final Question until the next Round
+      // simply appeared — no standings, no countdown, no Intermission at all.
       const upcoming = await fillableThemes(db, cfg.slotsPerRound, round.theme)
       await db.doc(LIVE_ROUND).set(
         {
@@ -116,6 +118,24 @@ export async function tick(deps: TickDeps): Promise<TickResult> {
         { merge: true },
       )
       await deps.schedule?.(round.nextRoundAt)
+
+      // The Round is over, so careers settle now rather than when the next one
+      // starts: the Intermission is exactly when somebody looks at the board.
+      // Each of these is independent, and none of them is worth stopping the
+      // show for.
+      for (const [what, job] of [
+        ['live board', () => publishLiveBoard(db, round.id, round.openSlot, now)],
+        ['careers', () => foldRoundIntoCareers(db, round.id, cfg)],
+        ['all-time board', () => publishAllTimeBoard(db, cfg, now)],
+        ['bot board', () => publishBotBoard(db, cfg.minRankedRounds, now)],
+      ] as const) {
+        try {
+          await job()
+        } catch (err) {
+          deps.onError?.(what, err)
+        }
+      }
+
       return { action: 'intermission' }
     }
     await deps.schedule?.(round.nextRoundAt)

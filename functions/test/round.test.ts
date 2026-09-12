@@ -258,6 +258,32 @@ describe('tick', () => {
     }
   })
 
+  it('still reaches the Intermission when a board fails to publish', async () => {
+    // A leaderboard query that threw on the way into the Intermission once
+    // froze every Round on its final Question. The state change comes first
+    // now, and the bookkeeping cannot take the show down with it.
+    await seedTheme('Geography')
+    const start = 1_000
+    await tick({ db, now: () => start, rng: seeded(1) })
+
+    // Make the careers fold fail by removing what it reads.
+    await db.recursiveDelete(db.collection(`rounds/${(await live()).id}/entries`))
+    const failures: string[] = []
+
+    const result = await tick({
+      db,
+      now: () => start + SLOT_MS * SLOTS + 10,
+      rng: seeded(5),
+      onError: (what) => failures.push(what),
+    })
+
+    expect(result).toMatchObject({ action: 'intermission' })
+    const r = await live()
+    expect(r.openSlot).toBe(-1)
+    expect(r.question).toBeNull()
+    expect(r.nextTheme).toBeDefined()
+  })
+
   it('announces the next Theme during the Intermission', async () => {
     // Needs somewhere else to go: with one fillable Theme, repeating it is
     // correct rather than a bug.
