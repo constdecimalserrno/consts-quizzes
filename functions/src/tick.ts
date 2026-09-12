@@ -12,6 +12,7 @@ import {
   type Rng,
   type Round,
 } from './round.js'
+import type { Theme } from './themes.js'
 
 export type TickDeps = {
   db: Firestore
@@ -54,7 +55,7 @@ export async function tick(deps: TickDeps): Promise<TickResult> {
   const round = snap.exists ? (snap.data() as Round) : null
 
   if (!round || now >= round.nextRoundAt) {
-    const started = await startRound(deps, rng, now)
+    const started = await startRound(deps, rng, now, round?.theme)
     await deps.schedule?.(started.slots[0]!.closesAt)
     return { action: 'started', roundId: started.id, theme: started.theme }
   }
@@ -107,11 +108,12 @@ async function startRound(
   deps: TickDeps,
   rng: Rng,
   now: number,
+  previousTheme?: Theme,
 ): Promise<Round> {
   const { db } = deps
   const cfg = await readConfig(db)
 
-  const themes = await fillableThemes(db, cfg.slotsPerRound)
+  const themes = await fillableThemes(db, cfg.slotsPerRound, previousTheme)
   const theme = themes[Math.floor(rng() * themes.length)]!
   const questions = await drawSlots(db, theme, cfg.slotsPerRound, rng)
   const slots = planSlots(questions, now, cfg)

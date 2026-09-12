@@ -2,7 +2,7 @@ import { getFunctions } from 'firebase-admin/functions'
 import { initializeApp } from 'firebase-admin/app'
 import { getFirestore } from 'firebase-admin/firestore'
 import { setGlobalOptions } from 'firebase-functions/v2'
-import { HttpsError, onCall } from 'firebase-functions/v2/https'
+import { HttpsError, onCall, onRequest } from 'firebase-functions/v2/https'
 import { onSchedule } from 'firebase-functions/v2/scheduler'
 import { onTaskDispatched } from 'firebase-functions/v2/tasks'
 
@@ -63,3 +63,19 @@ export const tickTask = onTaskDispatched(
 export const tickHeartbeat = onSchedule('every 1 minutes', async () => {
   await tick(deps())
 })
+
+/**
+ * The server's clock, for clients to measure their own offset against.
+ *
+ * The Slot schedule is absolute server time, so a visitor whose machine is a
+ * minute fast would be shown the wrong Question and have their Answers
+ * rejected as late — with nothing on screen to explain why. One request per
+ * session fixes it; caching is off because a cached clock is not a clock.
+ */
+export const serverTime = onRequest(
+  { cors: true },
+  (_request, response) => {
+    response.set('Cache-Control', 'no-store')
+    response.json({ now: Date.now() })
+  },
+)

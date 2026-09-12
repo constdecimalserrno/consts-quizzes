@@ -155,6 +155,37 @@ describe('tick', () => {
     expect(r.question).toBeNull()
   })
 
+  it('does not run the same Theme twice in a row', async () => {
+    // Two Themes can fill a Round; the draw must alternate rather than repeat.
+    const batch = db.batch()
+    for (const difficulty of ['easy', 'medium', 'hard'] as const) {
+      for (let i = 0; i < 12; i++) {
+        batch.set(db.doc(`questions/geo-${difficulty}-${i}`), {
+          theme: 'Geography',
+          difficulty,
+          prompt: `geo ${difficulty} ${i}`,
+          correct: 'right',
+          incorrect: ['a', 'b', 'c'],
+          source: 'test',
+          fetchedAt: 0,
+        })
+      }
+    }
+    await batch.commit()
+
+    let now = 1_000
+    const themes: string[] = []
+    for (let round = 0; round < 4; round++) {
+      await tick({ db, now: () => now, rng: seeded(round + 1) })
+      themes.push((await live()).theme)
+      now = (await live()).nextRoundAt + 1
+    }
+
+    for (let i = 1; i < themes.length; i++) {
+      expect(themes[i]).not.toBe(themes[i - 1])
+    }
+  })
+
   it('starts the next Round when the Intermission is over', async () => {
     const start = 1_000
     await tick({ db, now: () => start, rng: seeded(1) })

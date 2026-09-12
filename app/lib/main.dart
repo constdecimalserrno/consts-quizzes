@@ -1,9 +1,18 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
 import 'firebase_options.dart';
+import 'round/round.dart';
+import 'round/round_view.dart';
+import 'round/server_clock.dart';
+import 'theme/broadcast.dart';
+
+const _region = 'us-central1';
+final _serverTime =
+    Uri.parse('https://$_region-consts-quizzes.cloudfunctions.net/serverTime');
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -11,17 +20,24 @@ Future<void> main() async {
   runApp(const ConstsQuizzesApp());
 }
 
-/// Signs the visitor in anonymously, then asks the server to mint or return
-/// their Handle. Both are idempotent: a returning visitor keeps the uid the
-/// SDK persisted, and `ensurePlayer` hands back the Handle it minted the first
-/// time rather than a new one.
-Future<String> _signIn() async {
+/// Signs the visitor in anonymously, corrects the clock, and gets their Handle.
+///
+/// Sign-in and `ensurePlayer` are both idempotent: a returning visitor keeps
+/// the uid the SDK persisted and the Handle minted the first time.
+Future<({String handle, ServerClock clock})> _tuneIn() async {
   final auth = FirebaseAuth.instance;
   if (auth.currentUser == null) await auth.signInAnonymously();
+
+  final clock = await ServerClock.sync(_serverTime);
   final result =
       await FirebaseFunctions.instance.httpsCallable('ensurePlayer').call();
-  return (result.data as Map)['handle'] as String;
+  return (handle: (result.data as Map)['handle'] as String, clock: clock);
 }
+
+Stream<LiveRound?> _liveRounds() => FirebaseFirestore.instance
+    .doc('rounds/current')
+    .snapshots()
+    .map(LiveRound.fromSnapshot);
 
 class ConstsQuizzesApp extends StatelessWidget {
   const ConstsQuizzesApp({super.key});
@@ -30,44 +46,53 @@ class ConstsQuizzesApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
         title: "const's quizzes",
         debugShowCheckedModeBanner: false,
-        theme: ThemeData.dark(useMaterial3: true),
-        home: const _Shell(),
+        theme: ThemeData(
+          brightness: Brightness.dark,
+          scaffoldBackgroundColor: Broadcast.setDeep,
+          useMaterial3: true,
+        ),
+        home: const _TuneIn(),
       );
 }
 
-class _Shell extends StatefulWidget {
-  const _Shell();
+class _TuneIn extends StatefulWidget {
+  const _TuneIn();
 
   @override
-  State<_Shell> createState() => _ShellState();
+  State<_TuneIn> createState() => _TuneInState();
 }
 
-class _ShellState extends State<_Shell> {
-  late final Future<String> _uid = _signIn();
+class _TuneInState extends State<_TuneIn> {
+  late final Future<({String handle, ServerClock clock})> _ready = _tuneIn();
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: FutureBuilder<String>(
-              future: _uid,
-              builder: (context, snap) => switch (snap) {
-                AsyncSnapshot(hasError: true, :final error) =>
-                  Text("Couldn't sign in: $error", textAlign: TextAlign.center),
-                AsyncSnapshot(hasData: true, :final data?) => Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text("const's quizzes",
-                          style: TextStyle(fontSize: 32)),
-                      const SizedBox(height: 12),
-                      Text('you are $data'),
-                    ],
+  Widget build(BuildContext context) =>
+      FutureBuilder<({String handle, ServerClock clock})>(
+        future: _ready,
+        builder: (context, snap) {
+          if (snap.hasError) {
+            return Scaffold(
+              body: DecoratedBox(
+                decoration: Broadcast.set,
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(28),
+                    child: Text(
+                      "The broadcast didn't reach you. Reload to try again.",
+                      textAlign: TextAlign.center,
+                      style: Broadcast.body(16),
+                    ),
                   ),
-                _ => const CircularProgressIndicator(),
-              },
-            ),
-          ),
-        ),
+                ),
+              ),
+            );
+          }
+          final ready = snap.data;
+          return RoundView(
+            rounds: _liveRounds(),
+            clock: ready?.clock ?? ServerClock(),
+            handle: ready?.handle,
+          );
+        },
       );
 }

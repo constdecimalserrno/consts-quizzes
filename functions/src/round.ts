@@ -209,6 +209,7 @@ export function publicQuestion(
 export async function fillableThemes(
   db: Firestore,
   slots: number,
+  exclude?: Theme,
 ): Promise<Theme[]> {
   const counts = await Promise.all(
     THEMES.map(async (theme) => {
@@ -222,5 +223,11 @@ export async function fillableThemes(
   )
   // Twice a Round's length, so consecutive Rounds on a Theme are not identical.
   const fillable = counts.filter(([, n]) => n >= slots * 2).map(([t]) => t)
-  return fillable.length > 0 ? fillable : counts.map(([t]) => t)
+  const pool = fillable.length > 0 ? fillable : counts.map(([t]) => t)
+
+  // Back-to-back Rounds on the same Theme read as a bug even when they are
+  // honest chance, so the Theme that just ran is off the table — unless it is
+  // the only one that can fill a Round.
+  const fresh = pool.filter((t) => t !== exclude)
+  return fresh.length > 0 ? fresh : pool
 }
