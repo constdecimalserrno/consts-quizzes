@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../auth/save_prompt.dart';
 import '../theme/broadcast.dart';
 import 'answering.dart';
 import 'leaderboard.dart';
@@ -23,6 +24,7 @@ class RoundView extends StatefulWidget {
     this.uid,
     this.refusal,
     this.allTime,
+    this.anonymous = false,
   });
 
   final Stream<LiveRound?> rounds;
@@ -42,6 +44,9 @@ class RoundView extends StatefulWidget {
 
   final Stream<AllTimeBoard>? allTime;
 
+  /// Whether to offer to save this Player's progress once a Round ends well.
+  final bool anonymous;
+
   @override
   State<RoundView> createState() => _RoundViewState();
 }
@@ -59,6 +64,10 @@ class _RoundViewState extends State<RoundView> {
   String? _pickedKey;
   String? _picked;
   Answered _state = Answered.no;
+
+  /// Asked once. A prompt that comes back every Round is a nag, and a nag is
+  /// how a drop-in game loses the people who dropped in.
+  bool _promptDismissed = false;
 
   @override
   void initState() {
@@ -128,6 +137,13 @@ class _RoundViewState extends State<RoundView> {
                       uid: widget.uid,
                       refusal: widget.refusal,
                       allTime: widget.allTime,
+                      savePrompt: widget.anonymous && !_promptDismissed
+                          ? (score) => _SavePromptSlot(
+                                score: score,
+                                onDismiss: () =>
+                                    setState(() => _promptDismissed = true),
+                              )
+                          : null,
                     );
                   },
                 ),
@@ -160,6 +176,7 @@ class _Broadcast extends StatelessWidget {
     required this.uid,
     required this.refusal,
     required this.allTime,
+    required this.savePrompt,
   });
 
   final LiveRound round;
@@ -172,6 +189,10 @@ class _Broadcast extends StatelessWidget {
   final String? uid;
   final String? refusal;
   final Stream<AllTimeBoard>? allTime;
+
+  /// Built with the Player's score when a Round ends, if they should be asked
+  /// to keep it.
+  final Widget Function(int score)? savePrompt;
 
   @override
   Widget build(BuildContext context) {
@@ -205,6 +226,7 @@ class _Broadcast extends StatelessWidget {
                   allTime: allTime,
                   uid: uid,
                   compact: !round.inIntermission,
+                  savePrompt: round.inIntermission ? savePrompt : null,
                 ),
             ],
           ),
@@ -577,12 +599,14 @@ class _Board extends StatefulWidget {
     required this.allTime,
     required this.uid,
     required this.compact,
+    required this.savePrompt,
   });
 
   final Stream<LiveBoard> boards;
   final Stream<AllTimeBoard>? allTime;
   final String? uid;
   final bool compact;
+  final Widget Function(int score)? savePrompt;
 
   @override
   State<_Board> createState() => _BoardState();
@@ -630,11 +654,21 @@ class _BoardState extends State<_Board> {
         onBack: () => setState(() => _showAllTime = false),
       );
     }
-    return _RoundPanel(
-      board: _live,
-      uid: widget.uid,
-      compact: widget.compact,
-      onAllTime: canSwitch ? () => setState(() => _showAllTime = true) : null,
+    final mine = _live.top.where((s) => s.uid == widget.uid).firstOrNull;
+    final prompt = widget.savePrompt;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _RoundPanel(
+          board: _live,
+          uid: widget.uid,
+          compact: widget.compact,
+          onAllTime: canSwitch ? () => setState(() => _showAllTime = true) : null,
+        ),
+        // Only worth asking somebody who actually scored something.
+        if (prompt != null && mine != null && mine.score > 0)
+          prompt(mine.score),
+      ],
     );
   }
 }
@@ -843,4 +877,18 @@ class _Refused extends StatelessWidget {
           style: Broadcast.body(12, color: Broadcast.chalk),
         ),
       );
+}
+
+
+/// Wraps [SavePrompt] so the Round view can hand it a score without importing
+/// its state.
+class _SavePromptSlot extends StatelessWidget {
+  const _SavePromptSlot({required this.score, required this.onDismiss});
+
+  final int score;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) =>
+      SavePrompt(score: score, onDismiss: onDismiss);
 }

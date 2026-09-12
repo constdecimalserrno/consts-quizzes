@@ -1,5 +1,6 @@
 import { getFunctions } from 'firebase-admin/functions'
 import { initializeApp } from 'firebase-admin/app'
+import { getAuth } from 'firebase-admin/auth'
 import { FieldValue, getFirestore } from 'firebase-admin/firestore'
 import { logger } from 'firebase-functions'
 import { setGlobalOptions } from 'firebase-functions/v2'
@@ -9,6 +10,7 @@ import { onSchedule } from 'firebase-functions/v2/scheduler'
 import { onTaskDispatched } from 'firebase-functions/v2/tasks'
 
 import { verdict, type BudgetNotification } from './budget.js'
+import { mergePlayers } from './linking.js'
 import { isOpen, readConfig } from './config.js'
 import { ensurePlayer as ensurePlayerDoc } from './players.js'
 import { LIVE_ROUND } from './round.js'
@@ -54,6 +56,37 @@ export const ensurePlayer = onCall(async (request) => {
     : { seated: false as const, reason: 'closed' as const, taken: 0 }
 
   return { handle, seated: seat.seated, reason: seat.seated ? null : seat.reason }
+})
+
+/**
+ * Claims an abandoned anonymous Player's history for the account the viewer
+ * has just signed in as.
+ *
+ * Only needed when linking failed because the provider already had an account.
+ * The ordinary case — an anonymous account with a provider attached — keeps
+ * its uid and never calls this.
+ *
+ * The abandoned uid is proved by a fresh ID token for it, not merely named: a
+ * uid alone would let anybody claim any Player's history.
+ */
+export const claimAnonymousHistory = onCall(async (request) => {
+  const auth = request.auth
+  if (!auth) throw new HttpsError('unauthenticated', 'Sign in first.')
+
+  const token = request.data?.abandonedIdToken
+  if (typeof token !== 'string' || token === '') {
+    throw new HttpsError('invalid-argument', 'Needs the previous ID token.')
+  }
+
+  let abandonedUid: string
+  try {
+    abandonedUid = (await getAuth().verifyIdToken(token)).uid
+  } catch {
+    throw new HttpsError('permission-denied', 'That token is not valid.')
+  }
+
+  const result = await mergePlayers(db(), auth.uid, abandonedUid)
+  return { merged: result.merged, career: result.career }
 })
 
 /**

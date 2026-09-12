@@ -131,6 +131,7 @@ class _TuneInState extends State<_TuneIn> {
             boards: _liveBoard(),
             allTime: _allTimeBoard(),
             uid: ready?.uid,
+            anonymous: FirebaseAuth.instance.currentUser?.isAnonymous ?? false,
           );
         },
       );
