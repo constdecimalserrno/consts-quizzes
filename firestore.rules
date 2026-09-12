@@ -105,6 +105,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // API keys. Server-only both ways: the hash is all that is stored, and a
+    // client that could read this table could not use what it found anyway —
+    // but it could learn who the Bots are, which is nobody's business.
+    match /apiKeys/{keyId} {
+      allow read, write: if false;
+    }
+
     // The Handle reservation table. Server-only both ways: a client that could
     // write here could squat a Handle, and one that could read here could turn
     // a Handle back into a uid.

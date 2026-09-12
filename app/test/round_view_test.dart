@@ -70,6 +70,7 @@ Future<void> _pump(
   String? uid,
   String? refusal,
   Stream<AllTimeBoard>? allTime,
+  Stream<AllTimeBoard>? bots,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -82,6 +83,7 @@ Future<void> _pump(
         uid: uid,
         refusal: refusal,
         allTime: allTime,
+        bots: bots,
       ),
     ),
   );
@@ -466,7 +468,7 @@ void main() {
       expect(find.text('742'), findsOneWidget);
       expect(find.text('best 1200'), findsOneWidget);
 
-      await tester.tap(find.text('this round'));
+      await tester.tap(find.text('close'));
       await tester.pump();
       await tester.pump(Duration.zero);
       await tester.pump();
@@ -492,6 +494,55 @@ void main() {
         find.textContaining('Nobody has finished enough rounds'),
         findsOneWidget,
       );
+    });
+
+    testWidgets('keeps Bots on their own board', (tester) async {
+      await _pump(
+        tester,
+        Stream.value(_round(openSlot: -1, now: 0)),
+        _FixedClock(30000),
+        boards: _broadcast(board(3, [('a-1', 900)])),
+        allTime: _broadcast(
+          const AllTimeBoard(
+            top: [
+              CareerStanding(
+                uid: 'h-1',
+                handle: 'human-1',
+                averageScore: 600,
+                bestRound: 900,
+                roundsPlayed: 10,
+              ),
+            ],
+          ),
+        ),
+        bots: _broadcast(
+          const AllTimeBoard(
+            top: [
+              CareerStanding(
+                uid: 'b-1',
+                handle: 'robot-1',
+                averageScore: 998,
+                bestRound: 1000,
+                roundsPlayed: 400,
+              ),
+            ],
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('all time'));
+      await tester.pump();
+      await tester.pump(Duration.zero);
+      await tester.pump();
+      expect(find.text('human-1'), findsOneWidget);
+      expect(find.text('robot-1'), findsNothing);
+
+      await tester.tap(find.text('bots'));
+      await tester.pump();
+      await tester.pump(Duration.zero);
+      await tester.pump();
+      expect(find.text('robot-1'), findsOneWidget);
+      expect(find.text('human-1'), findsNothing);
     });
 
     testWidgets('picks this Player out of the standings', (tester) async {

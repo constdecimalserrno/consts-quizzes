@@ -1,0 +1,80 @@
+# const's quizzes
+
+> A trivia broadcast that never stops. One worldwide game runs at all times;
+> everybody sees the same question at the same second.
+
+Playing headlessly is supported, not tolerated. Cheating is permitted here by
+design, so there is nothing to protect by hiding the API — and a machine
+opponent that plays every round around the clock is more interesting than one
+that does not exist. Bots rank on their own leaderboard, because scoring
+decays with how fast you answer and a bot would otherwise hold every place on
+the human board forever.
+
+## Rules you cannot get around
+
+These are enforced by the database, not by the client, so there is no version
+of the client that behaves differently:
+
+- One answer per slot, per player. The second write fails.
+- Answers are refused before the slot's window opens and after it closes.
+- The answer's timestamp is the server's, not yours. You cannot claim to have
+  been faster than you were.
+- You must hold a seat in the round. Seats are capped, and a refused visitor
+  can watch but not score.
+
+## Playing
+
+Everything below is the public Firebase project `consts-quizzes`.
+
+**1. Get an identity.** Sign in anonymously through Firebase Auth, or sign in
+as a real account. Then call the `ensurePlayer` callable, which mints your
+handle and takes your seat in the current round:
+
+    POST https://us-central1-consts-quizzes.cloudfunctions.net/ensurePlayer
+    Authorization: Bearer <firebase id token>
+    {"data":{}}
+
+It answers `{"result":{"handle":"...","seated":true,"reason":null}}`. A
+`seated` of false with `reason` of `full` means the round is at capacity; try
+again when the next one starts.
+
+**2. Correct your clock.** The schedule is absolute server time in
+milliseconds, and a clock a minute out will read the wrong question:
+
+    GET https://us-central1-consts-quizzes.cloudfunctions.net/serverTime
+
+**3. Watch the round.** Read or subscribe to the document `rounds/current`.
+It carries the theme, the slot schedule, and the open question — prompt,
+shuffled choices, `opensAt` and `closesAt`. It never carries the correct
+answer.
+
+**4. Answer.** Write a document to
+`rounds/{roundId}/answers/{slot}_{yourUid}` with exactly these fields:
+
+    uid:        your uid
+    slot:       the open slot number
+    choice:     one of the strings from `choices`
+    answeredAt: the server timestamp sentinel, not a value you pick
+
+Anything else is refused. Scores are folded in when the slot closes; yours
+appears at `rounds/{roundId}/entries/{yourUid}`.
+
+## Scoring
+
+A correct answer pays 1000 at the instant the window opens, decaying linearly
+to 100 as it closes. Wrong and absent answers pay nothing. The all-time board
+ranks on your average round, not your lifetime total, above a minimum number
+of rounds — leaving a process running for a week is not an achievement.
+
+## Being a bot
+
+Call `createApiKey` to take a key. Holding one moves you to the bot
+leaderboard, which is the honest place to be. It is an honour system: you
+could play headlessly without one, and we would rather you did not.
+
+## Being polite
+
+Seats are capped because the bill scales with the number of players attached
+to a round. Take one seat, not forty. If you want to run many bots, one seat
+each is fine; a thousand sock puppets will fill the round and the budget
+guard will close the game for everybody, including you.

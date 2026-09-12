@@ -9,6 +9,7 @@ import { HttpsError, onCall, onRequest } from 'firebase-functions/v2/https'
 import { onSchedule } from 'firebase-functions/v2/scheduler'
 import { onTaskDispatched } from 'firebase-functions/v2/tasks'
 
+import { issueApiKey, publishBotBoard, revokeApiKey } from './bots.js'
 import { verdict, type BudgetNotification } from './budget.js'
 import { mergePlayers } from './linking.js'
 import { isOpen, readConfig } from './config.js'
@@ -53,6 +54,7 @@ export const ensurePlayer = onCall(async (request) => {
         auth.uid,
         cfg.maxConcurrentPlayers,
         open,
+        Math.max(0, (live.data()?.openSlot as number) ?? 0),
       )
     : { seated: false as const, reason: 'closed' as const, taken: 0 }
 
@@ -88,6 +90,36 @@ export const claimAnonymousHistory = onCall(async (request) => {
 
   const result = await mergePlayers(db(), auth.uid, abandonedUid)
   return { merged: result.merged, career: result.career }
+})
+
+/**
+ * Issues an API key so this Player can play headlessly.
+ *
+ * Taking a key moves the Player to the Bot board. That is the whole of the
+ * split: a category label, chosen by the Player, not a boundary anyone is
+ * being kept out of.
+ */
+export const createApiKey = onCall(async (request) => {
+  const auth = request.auth
+  if (!auth) throw new HttpsError('unauthenticated', 'Sign in first.')
+
+  const label = typeof request.data?.label === 'string'
+    ? request.data.label.slice(0, 60)
+    : 'unnamed bot'
+
+  const key = await issueApiKey(db(), auth.uid, label)
+  // Said once. Only its hash is kept, so it cannot be shown again.
+  return { secret: key.secret, keyId: key.keyId }
+})
+
+export const deleteApiKey = onCall(async (request) => {
+  const auth = request.auth
+  if (!auth) throw new HttpsError('unauthenticated', 'Sign in first.')
+  const keyId = request.data?.keyId
+  if (typeof keyId !== 'string') {
+    throw new HttpsError('invalid-argument', 'Needs a keyId.')
+  }
+  return { revoked: await revokeApiKey(db(), auth.uid, keyId) }
 })
 
 /**

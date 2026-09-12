@@ -123,15 +123,13 @@ describe('scoreSlot', () => {
     expect((await entry('alice'))!.score).toBe(first * 2)
   })
 
-  it('records the Slot a Player first appeared on', async () => {
+  it('leaves the join Slot alone: that belongs to the seat, not to scoring', async () => {
     await putAnswer('alice', 'Paris', OPENS)
-    await db.doc(`rounds/${ROUND_ID}/answers/0_alice`).set(
-      { firstSlot: 12 },
-      { merge: true },
-    )
     await scoreSlot(db, round(), 0, DEFAULT_CONFIG)
 
-    expect((await entry('alice'))!.firstSlot).toBe(12)
+    // Scoring used to rewrite this every Slot, which recorded the *last* Slot
+    // answered and marked anyone who played to the end as a latecomer.
+    expect((await entry('alice'))!.firstSlot).toBeUndefined()
   })
 
   it('scores a whole field of Players in one pass', async () => {

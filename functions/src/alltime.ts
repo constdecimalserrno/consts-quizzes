@@ -59,14 +59,21 @@ export async function foldRoundIntoCareers(
 
   for (let i = 0; i < entries.docs.length; i += 200) {
     const slice = entries.docs.slice(i, i + 200)
-    const players = await db.getAll(
-      ...slice.map((d) => db.doc(`players/${d.id}`)),
-    )
+    const [players, seats] = await Promise.all([
+      db.getAll(...slice.map((d) => db.doc(`players/${d.id}`))),
+      // Where each Player came in, recorded once when they took their seat.
+      // Deriving it from Answers instead would need a read per Slot, and an
+      // earlier attempt that folded it into scoring silently recorded the
+      // *last* Slot answered — which marked anyone who played to the end as a
+      // late joiner and left them permanently unranked.
+      db.getAll(...slice.map((d) => db.doc(`rounds/${roundId}/seatHolders/${d.id}`))),
+    ])
 
     const batch = db.batch()
     for (const [n, entry] of slice.entries()) {
       const score = (entry.data().score as number) ?? 0
-      const ranked = ((entry.data().firstSlot as number) ?? 0) <= cfg.rankedJoinBySlot
+      const joinedAt = (seats[n]?.data()?.joinedAtSlot as number) ?? 0
+      const ranked = joinedAt <= cfg.rankedJoinBySlot
       const was = readCareer(players[n]?.data()?.career)
 
       const rankedRounds = was.rankedRounds + (ranked ? 1 : 0)

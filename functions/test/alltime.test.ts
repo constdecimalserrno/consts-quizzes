@@ -19,8 +19,12 @@ beforeEach(async () => {
   await db.recursiveDelete(db.collection('leaderboards'))
 })
 
-const entry = (round: string, uid: string, score: number, firstSlot = 0) =>
-  db.doc(`rounds/${round}/entries/${uid}`).set({ uid, score, firstSlot, answered: 20 })
+const entry = async (round: string, uid: string, score: number, joinedAtSlot = 0) => {
+  await db.doc(`rounds/${round}/entries/${uid}`).set({ uid, score, answered: 20 })
+  await db
+    .doc(`rounds/${round}/seatHolders/${uid}`)
+    .set({ joinedAtSlot })
+}
 
 const career = async (uid: string) =>
   (await db.doc(`players/${uid}`).get()).data()?.career
@@ -68,6 +72,15 @@ describe('foldRoundIntoCareers', () => {
     await foldRoundIntoCareers(db, 'r2', cfg)
 
     expect((await career('u1'))!.bestRound).toBe(900)
+  })
+
+  it('counts a Round for a Player whose seat was never recorded', async () => {
+    // An absent seat reads as slot 0: not being able to prove somebody joined
+    // late is not a reason to leave them out.
+    await db.doc('rounds/rX/entries/u1').set({ uid: 'u1', score: 500, answered: 20 })
+    await foldRoundIntoCareers(db, 'rX', cfg)
+
+    expect((await career('u1'))!.rankedRounds).toBe(1)
   })
 
   it('does not count a Round joined too late toward the average', async () => {

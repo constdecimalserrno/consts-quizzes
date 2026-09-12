@@ -57,7 +57,6 @@ export async function scoreSlot(
         score: FieldValue.increment(earned),
         answered: FieldValue.increment(1),
         correct: FieldValue.increment(wasCorrect ? 1 : 0),
-        firstSlot: d.firstSlot ?? slot,
       },
       { merge: true },
     )

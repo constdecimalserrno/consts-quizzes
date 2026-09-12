@@ -25,6 +25,7 @@ class RoundView extends StatefulWidget {
     this.refusal,
     this.allTime,
     this.anonymous = false,
+    this.bots,
   });
 
   final Stream<LiveRound?> rounds;
@@ -46,6 +47,8 @@ class RoundView extends StatefulWidget {
 
   /// Whether to offer to save this Player's progress once a Round ends well.
   final bool anonymous;
+
+  final Stream<AllTimeBoard>? bots;
 
   @override
   State<RoundView> createState() => _RoundViewState();
@@ -137,6 +140,7 @@ class _RoundViewState extends State<RoundView> {
                       uid: widget.uid,
                       refusal: widget.refusal,
                       allTime: widget.allTime,
+                      bots: widget.bots,
                       savePrompt: widget.anonymous && !_promptDismissed
                           ? (score) => _SavePromptSlot(
                                 score: score,
@@ -176,6 +180,7 @@ class _Broadcast extends StatelessWidget {
     required this.uid,
     required this.refusal,
     required this.allTime,
+    required this.bots,
     required this.savePrompt,
   });
 
@@ -189,6 +194,7 @@ class _Broadcast extends StatelessWidget {
   final String? uid;
   final String? refusal;
   final Stream<AllTimeBoard>? allTime;
+  final Stream<AllTimeBoard>? bots;
 
   /// Built with the Player's score when a Round ends, if they should be asked
   /// to keep it.
@@ -224,6 +230,7 @@ class _Broadcast extends StatelessWidget {
                 _Board(
                   boards: boards!,
                   allTime: allTime,
+                  bots: bots,
                   uid: uid,
                   compact: !round.inIntermission,
                   savePrompt: round.inIntermission ? savePrompt : null,
@@ -597,6 +604,7 @@ class _Board extends StatefulWidget {
   const _Board({
     required this.boards,
     required this.allTime,
+    required this.bots,
     required this.uid,
     required this.compact,
     required this.savePrompt,
@@ -604,6 +612,7 @@ class _Board extends StatefulWidget {
 
   final Stream<LiveBoard> boards;
   final Stream<AllTimeBoard>? allTime;
+  final Stream<AllTimeBoard>? bots;
   final String? uid;
   final bool compact;
   final Widget Function(int score)? savePrompt;
@@ -620,10 +629,14 @@ class _Board extends StatefulWidget {
 class _BoardState extends State<_Board> {
   late final StreamSubscription<LiveBoard> _liveSub;
   StreamSubscription<AllTimeBoard>? _careerSub;
+  StreamSubscription<AllTimeBoard>? _botSub;
 
   LiveBoard _live = LiveBoard.empty;
   AllTimeBoard _careers = AllTimeBoard.empty;
-  bool _showAllTime = false;
+  AllTimeBoard _botBoard = AllTimeBoard.empty;
+
+  /// 0 this Round, 1 all time, 2 the Bots.
+  int _view = 0;
 
   @override
   void initState() {
@@ -634,24 +647,34 @@ class _BoardState extends State<_Board> {
     _careerSub = widget.allTime?.listen((b) {
       if (mounted) setState(() => _careers = b);
     });
+    _botSub = widget.bots?.listen((b) {
+      if (mounted) setState(() => _botBoard = b);
+    });
   }
 
   @override
   void dispose() {
     _liveSub.cancel();
     _careerSub?.cancel();
+    _botSub?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    // The all-time board is only worth the room when a Round is not using it.
+    // The other boards are only worth the room when a Round is not using it.
     final canSwitch = widget.allTime != null && !widget.compact;
-    if (_showAllTime && canSwitch) {
+    if (canSwitch && _view != 0) {
       return _AllTimePanel(
-        careers: _careers,
+        careers: _view == 1 ? _careers : _botBoard,
         uid: widget.uid,
-        onBack: () => setState(() => _showAllTime = false),
+        title: _view == 1 ? 'all time, by average round' : 'bots, by average round',
+        emptyLine: _view == 1
+            ? 'Nobody has finished enough rounds yet.'
+            : 'No bot has finished enough rounds yet.',
+        nextLabel: _view == 1 ? 'bots' : 'this round',
+        onNext: () => setState(() => _view = _view == 1 ? 2 : 0),
+        onBack: () => setState(() => _view = 0),
       );
     }
     final mine = _live.top.where((s) => s.uid == widget.uid).firstOrNull;
@@ -663,7 +686,7 @@ class _BoardState extends State<_Board> {
           board: _live,
           uid: widget.uid,
           compact: widget.compact,
-          onAllTime: canSwitch ? () => setState(() => _showAllTime = true) : null,
+          onAllTime: canSwitch ? () => setState(() => _view = 1) : null,
         ),
         // Only worth asking somebody who actually scored something.
         if (prompt != null && mine != null && mine.score > 0)
@@ -779,11 +802,19 @@ class _AllTimePanel extends StatelessWidget {
   const _AllTimePanel({
     required this.careers,
     required this.uid,
+    required this.title,
+    required this.emptyLine,
+    required this.nextLabel,
+    required this.onNext,
     required this.onBack,
   });
 
   final AllTimeBoard careers;
   final String? uid;
+  final String title;
+  final String emptyLine;
+  final String nextLabel;
+  final VoidCallback onNext;
   final VoidCallback onBack;
 
   @override
@@ -802,9 +833,16 @@ class _AllTimePanel extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('all time, by average round',
-                  style: Broadcast.body(12, color: Broadcast.gold)),
-              _BoardLink(label: 'this round', onTap: onBack),
+              Flexible(
+                child: Text(title,
+                    overflow: TextOverflow.ellipsis,
+                    style: Broadcast.body(12, color: Broadcast.gold)),
+              ),
+              Row(children: [
+                _BoardLink(label: nextLabel, onTap: onNext),
+                const SizedBox(width: 8),
+                _BoardLink(label: 'close', onTap: onBack),
+              ]),
             ],
           ),
           const SizedBox(height: 6),
@@ -812,7 +850,7 @@ class _AllTimePanel extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 6),
               child: Text(
-                'Nobody has finished enough rounds yet.',
+                emptyLine,
                 style: Broadcast.body(12, color: Broadcast.chalkDim),
               ),
             ),

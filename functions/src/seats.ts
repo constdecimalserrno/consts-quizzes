@@ -26,6 +26,8 @@ export async function takeSeat(
   uid: string,
   cap: number,
   open: boolean,
+  /** The Slot on screen as they arrived; what decides if the Round counts. */
+  joinedAtSlot = 0,
 ): Promise<SeatResult> {
   if (!open) return { seated: false, reason: 'closed', taken: 0 }
 
@@ -42,7 +44,7 @@ export async function takeSeat(
 
     if (taken >= cap) return { seated: false, reason: 'full' as const, taken }
 
-    tx.set(held, { at: FieldValue.serverTimestamp() })
+    tx.set(held, { at: FieldValue.serverTimestamp(), joinedAtSlot })
     tx.set(seats, { taken: FieldValue.increment(1) }, { merge: true })
     return { seated: true, taken: taken + 1 }
   })

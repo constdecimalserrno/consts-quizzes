@@ -66,6 +66,11 @@ Stream<AllTimeBoard> _allTimeBoard() => FirebaseFirestore.instance
     .snapshots()
     .map(AllTimeBoard.fromSnapshot);
 
+Stream<AllTimeBoard> _botBoard() => FirebaseFirestore.instance
+    .doc('leaderboards/bots')
+    .snapshots()
+    .map(AllTimeBoard.fromSnapshot);
+
 class ConstsQuizzesApp extends StatelessWidget {
   const ConstsQuizzesApp({super.key});
 
@@ -130,6 +135,7 @@ class _TuneInState extends State<_TuneIn> {
             refusal: ready?.refusal,
             boards: _liveBoard(),
             allTime: _allTimeBoard(),
+            bots: _botBoard(),
             uid: ready?.uid,
             anonymous: FirebaseAuth.instance.currentUser?.isAnonymous ?? false,
           );

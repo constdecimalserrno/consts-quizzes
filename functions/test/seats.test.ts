@@ -72,6 +72,24 @@ describe('takeSeat', () => {
     expect(await taken()).toBeLessThanOrEqual(cap)
   })
 
+  it('records the Slot the Player came in on', async () => {
+    await takeSeat(db, ROUND, 'latecomer', 10, true, 17)
+
+    expect(
+      (await db.doc(`rounds/${ROUND}/seatHolders/latecomer`).get()).data(),
+    ).toMatchObject({ joinedAtSlot: 17 })
+  })
+
+  it('keeps the original join Slot when the Player comes back', async () => {
+    await takeSeat(db, ROUND, 'u1', 10, true, 2)
+    await takeSeat(db, ROUND, 'u1', 10, true, 15)
+
+    // A refresh at Slot 15 must not relabel them a latecomer.
+    expect(
+      (await db.doc(`rounds/${ROUND}/seatHolders/u1`).get()).data(),
+    ).toMatchObject({ joinedAtSlot: 2 })
+  })
+
   it('counts seats per Round, so a new Round starts empty', async () => {
     await takeSeat(db, ROUND, 'u1', 3, true)
     await takeSeat(db, 'r2', 'u1', 3, true)
