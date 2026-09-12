@@ -16,13 +16,18 @@ class _FixedClock extends ServerClock {
   int get nowMs => fixed;
 }
 
+/// A Slot laid out as the server lays one out: read, answer, reveal, idle.
+const readMs = 3000;
+const answerMs = 10000;
+const revealMs = 4000;
+const idleMs = 2000;
+
 LiveRound _round({
   required int openSlot,
   required int now,
   String theme = 'Geography',
   String? nextTheme,
-  int readMs = 4000,
-  int slotMs = 15000,
+  String? correct,
 }) =>
     LiveRound(
       id: 'r1',
@@ -37,11 +42,21 @@ LiveRound _round({
               prompt: 'What is the capital of France?',
               choices: const ['Paris', 'London', 'Rome', 'Berlin'],
               difficulty: 'easy',
+              startsAt: now,
               opensAt: now + readMs,
-              closesAt: now + slotMs,
+              closesAt: now + readMs + answerMs,
+              revealUntil: now + readMs + answerMs + revealMs,
+              endsAt: now + readMs + answerMs + revealMs + idleMs,
+              correct: correct,
             ),
       nextRoundAt: now + 60000,
     );
+
+/// A moment inside each phase of a Slot that started at zero.
+const inRead = 1000;
+const inAnswer = readMs + 2000;
+const inReveal = readMs + answerMs + 1000;
+const inIdle = readMs + answerMs + revealMs + 500;
 
 /// Firestore's snapshot streams are broadcast, and the board panels subscribe
 /// and unsubscribe as the viewer switches between them. A single-subscription
@@ -101,14 +116,29 @@ void main() {
     expect(find.text('Tuning in…'), findsOneWidget);
   });
 
-  testWidgets('renders the open Question and its Choices', (tester) async {
+  testWidgets('shows the prompt but hides the Choices while reading',
+      (tester) async {
     await _pump(
       tester,
       Stream.value(_round(openSlot: 6, now: 0)),
-      _FixedClock(0),
+      _FixedClock(inRead),
     );
 
     expect(find.text('What is the capital of France?'), findsOneWidget);
+    // Greying them out would just mean everyone reads them anyway.
+    for (final c in ['Paris', 'London', 'Rome', 'Berlin']) {
+      expect(find.text(c), findsNothing);
+    }
+    expect(find.text('read it'), findsOneWidget);
+  });
+
+  testWidgets('brings the Choices out when the Window opens', (tester) async {
+    await _pump(
+      tester,
+      Stream.value(_round(openSlot: 6, now: 0)),
+      _FixedClock(inAnswer),
+    );
+
     for (final c in ['Paris', 'London', 'Rome', 'Berlin']) {
       expect(find.text(c), findsOneWidget);
     }
@@ -119,7 +149,7 @@ void main() {
     await _pump(
       tester,
       Stream.value(_round(openSlot: 6, now: 0)),
-      _FixedClock(0),
+      _FixedClock(inAnswer),
     );
     expect(find.text('question 7 of 20'), findsOneWidget);
   });
@@ -128,38 +158,32 @@ void main() {
     await _pump(
       tester,
       Stream.value(_round(openSlot: 0, now: 0, theme: 'Mythology')),
-      _FixedClock(0),
+      _FixedClock(inAnswer),
     );
     expect(find.text('Mythology'), findsOneWidget);
   });
 
-  testWidgets('holds Answers shut during the read phase', (tester) async {
-    await _pump(
-      tester,
-      Stream.value(_round(openSlot: 0, now: 0)),
-      _FixedClock(1000),
-    );
-    expect(find.text('read it'), findsOneWidget);
-    expect(find.text('answering'), findsNothing);
-  });
-
-  testWidgets('opens Answers once the read phase is over', (tester) async {
-    await _pump(
-      tester,
-      Stream.value(_round(openSlot: 0, now: 0)),
-      _FixedClock(5000),
-    );
-    expect(find.text('answering'), findsOneWidget);
-  });
-
-  testWidgets('counts down in whole seconds to the Slot closing',
+  testWidgets('shows what the Answer is worth, falling as time runs out',
       (tester) async {
+    // Two seconds into a ten-second Window: eight tenths of the spread left.
     await _pump(
       tester,
       Stream.value(_round(openSlot: 0, now: 0)),
-      _FixedClock(5000),
+      _FixedClock(inAnswer),
     );
-    expect(find.text('10'), findsOneWidget);
+
+    expect(find.text('820'), findsOneWidget);
+    expect(find.text('8s'), findsOneWidget);
+  });
+
+  testWidgets('the meter is worth less later in the Window', (tester) async {
+    await _pump(
+      tester,
+      Stream.value(_round(openSlot: 0, now: 0)),
+      _FixedClock(readMs + 8000),
+    );
+
+    expect(find.text('280'), findsOneWidget);
   });
 
   testWidgets('joins at whatever Slot is open, not the start of the Round',
@@ -167,9 +191,104 @@ void main() {
     await _pump(
       tester,
       Stream.value(_round(openSlot: 17, now: 0)),
-      _FixedClock(5000),
+      _FixedClock(inAnswer),
     );
     expect(find.text('question 18 of 20'), findsOneWidget);
+  });
+
+  group('reveal', () {
+    testWidgets('says which Choice was right', (tester) async {
+      await _pump(
+        tester,
+        Stream.value(_round(openSlot: 0, now: 0, correct: 'Paris')),
+        _FixedClock(inReveal),
+      );
+
+      expect(find.text('the answer is'), findsOneWidget);
+      expect(find.text('correct'), findsOneWidget);
+    });
+
+    testWidgets('congratulates a Player who got it', (tester) async {
+      final sink = _FakeSink();
+      final controller = StreamController<LiveRound?>();
+      addTearDown(controller.close);
+      final clock = _FixedClock(inAnswer);
+      await _pump(tester, controller.stream, clock, sink: sink);
+
+      controller.add(_round(openSlot: 0, now: 0));
+      await tester.pump(Duration.zero);
+      await tester.pump();
+      await tester.tap(find.text('Paris'));
+      await tester.pump();
+
+      clock.fixed = inReveal;
+      controller.add(_round(openSlot: 0, now: 0, correct: 'Paris'));
+      await tester.pump(Duration.zero);
+      await tester.pump();
+
+      expect(find.text('you got it'), findsOneWidget);
+    });
+
+    testWidgets('marks a wrong pick as wrong rather than dropping it',
+        (tester) async {
+      final sink = _FakeSink();
+      final controller = StreamController<LiveRound?>();
+      addTearDown(controller.close);
+      final clock = _FixedClock(inAnswer);
+      await _pump(tester, controller.stream, clock, sink: sink);
+
+      controller.add(_round(openSlot: 0, now: 0));
+      await tester.pump(Duration.zero);
+      await tester.pump();
+      await tester.tap(find.text('London'));
+      await tester.pump();
+
+      clock.fixed = inReveal;
+      controller.add(_round(openSlot: 0, now: 0, correct: 'Paris'));
+      await tester.pump(Duration.zero);
+      await tester.pump();
+
+      expect(find.text('not this one'), findsOneWidget);
+      expect(find.text('correct'), findsOneWidget);
+    });
+
+    testWidgets('refuses Answers once the Window has shut', (tester) async {
+      final sink = _FakeSink();
+      await _pump(
+        tester,
+        Stream.value(_round(openSlot: 0, now: 0, correct: 'Paris')),
+        _FixedClock(inReveal),
+        sink: sink,
+      );
+
+      await tester.tap(find.text('Rome'), warnIfMissed: false);
+      await tester.pump();
+
+      expect(sink.submitted, isEmpty);
+    });
+
+    testWidgets('says it is checking before the answer arrives', (tester) async {
+      // The Window has shut but the server has not published the answer yet.
+      await _pump(
+        tester,
+        Stream.value(_round(openSlot: 0, now: 0)),
+        _FixedClock(inReveal),
+      );
+
+      expect(find.text('checking…'), findsOneWidget);
+      expect(find.text('next question in'), findsNothing);
+    });
+
+    testWidgets('counts down to the next Question after the reveal',
+        (tester) async {
+      await _pump(
+        tester,
+        Stream.value(_round(openSlot: 0, now: 0, correct: 'Paris')),
+        _FixedClock(inIdle),
+      );
+
+      expect(find.text('next question in'), findsOneWidget);
+    });
   });
 
   testWidgets('advances when the Round stream emits the next Slot',
@@ -234,7 +353,7 @@ void main() {
     await _pump(
       tester,
       Stream.value(_round(openSlot: 3, now: 0)),
-      _FixedClock(5000),
+      _FixedClock(inAnswer),
     );
     await tester.pumpAndSettle();
 
@@ -248,7 +367,7 @@ void main() {
       await _pump(
         tester,
         Stream.value(_round(openSlot: 0, now: 0)),
-        _FixedClock(5000),
+        _FixedClock(inAnswer),
         sink: sink,
       );
 
@@ -259,18 +378,18 @@ void main() {
       expect(find.text('locked in'), findsOneWidget);
     });
 
-    testWidgets('ignores taps during the read phase', (tester) async {
+    testWidgets('gives nothing to tap during the read phase', (tester) async {
       final sink = _FakeSink();
       await _pump(
         tester,
         Stream.value(_round(openSlot: 0, now: 0)),
-        _FixedClock(1000),
+        _FixedClock(inRead),
         sink: sink,
       );
 
-      await tester.tap(find.text('Rome'), warnIfMissed: false);
-      await tester.pump();
-
+      // There is nothing to press, which is a stronger guarantee than a
+      // disabled button: nobody can answer before they have read the Question.
+      expect(find.text('Rome'), findsNothing);
       expect(sink.submitted, isEmpty);
     });
 
@@ -279,7 +398,7 @@ void main() {
       await _pump(
         tester,
         Stream.value(_round(openSlot: 0, now: 0)),
-        _FixedClock(5000),
+        _FixedClock(inAnswer),
         sink: sink,
       );
 
@@ -296,7 +415,7 @@ void main() {
       await _pump(
         tester,
         Stream.value(_round(openSlot: 0, now: 0)),
-        _FixedClock(5000),
+        _FixedClock(inAnswer),
         sink: sink,
       );
 
@@ -310,7 +429,7 @@ void main() {
       final controller = StreamController<LiveRound?>();
       addTearDown(controller.close);
       final sink = _FakeSink();
-      await _pump(tester, controller.stream, _FixedClock(5000), sink: sink);
+      await _pump(tester, controller.stream, _FixedClock(inAnswer), sink: sink);
 
       controller.add(_round(openSlot: 0, now: 0));
       await tester.pump(Duration.zero);
@@ -333,13 +452,77 @@ void main() {
       await _pump(
         tester,
         Stream.value(_round(openSlot: 0, now: 0)),
-        _FixedClock(5000),
+        _FixedClock(inAnswer),
       );
 
       await tester.tap(find.text('Rome'), warnIfMissed: false);
       await tester.pump();
 
       expect(find.text('locked in'), findsNothing);
+    });
+  });
+
+  group('game over', () {
+    LiveBoard withMe(int score, int correct) => LiveBoard(
+          playing: 12,
+          slot: 19,
+          top: [
+            const Standing(uid: 'other', handle: 'somebody-1', score: 9999),
+            Standing(uid: 'me', handle: 'me-2', score: score, correct: correct),
+          ],
+        );
+
+    testWidgets('breaks down how this Player did', (tester) async {
+      await _pump(
+        tester,
+        Stream.value(_round(openSlot: -1, now: 0)),
+        _FixedClock(30000),
+        boards: _broadcast(withMe(8400, 14)),
+        uid: 'me',
+      );
+
+      // Twice on purpose: once as the headline, once in the standings row.
+      expect(find.text('8400'), findsNWidgets(2));
+      expect(find.text('14 of 20 right  ·  #2'), findsOneWidget);
+    });
+
+    testWidgets('grades the round', (tester) async {
+      await _pump(
+        tester,
+        Stream.value(_round(openSlot: -1, now: 0)),
+        _FixedClock(30000),
+        boards: _broadcast(withMe(20000, 20)),
+        uid: 'me',
+      );
+
+      expect(find.text('A perfect round. Nobody does that.'), findsOneWidget);
+    });
+
+    testWidgets('has something to say about nought out of twenty',
+        (tester) async {
+      await _pump(
+        tester,
+        Stream.value(_round(openSlot: -1, now: 0)),
+        _FixedClock(30000),
+        boards: _broadcast(withMe(0, 0)),
+        uid: 'me',
+      );
+
+      expect(find.text('Everyone starts somewhere. Run it back.'), findsOneWidget);
+    });
+
+    testWidgets('shows a watcher the standings without a personal line',
+        (tester) async {
+      await _pump(
+        tester,
+        Stream.value(_round(openSlot: -1, now: 0)),
+        _FixedClock(30000),
+        boards: _broadcast(withMe(8400, 14)),
+        uid: 'someone-who-did-not-play',
+      );
+
+      expect(find.text('final scores'), findsOneWidget);
+      expect(find.textContaining('of 20 right'), findsNothing);
     });
   });
 
@@ -357,7 +540,7 @@ void main() {
       await _pump(
         tester,
         Stream.value(_round(openSlot: 0, now: 0)),
-        _FixedClock(5000),
+        _FixedClock(inAnswer),
         boards: _broadcast(board(0, [])),
       );
       expect(find.text('nobody has answered yet'), findsOneWidget);
@@ -368,7 +551,7 @@ void main() {
       await _pump(
         tester,
         Stream.value(_round(openSlot: 0, now: 0)),
-        _FixedClock(5000),
+        _FixedClock(inAnswer),
         boards: _broadcast(
           board(1483, [('alpha-1', 900), ('beta-2', 700), ('gamma-3', 500)]),
         ),
@@ -384,7 +567,7 @@ void main() {
       await _pump(
         tester,
         Stream.value(_round(openSlot: 0, now: 0)),
-        _FixedClock(5000),
+        _FixedClock(inAnswer),
         boards: _broadcast(
           board(9, [
             ('a-1', 900),
@@ -422,7 +605,7 @@ void main() {
       await _pump(
         tester,
         Stream.value(_round(openSlot: 0, now: 0)),
-        _FixedClock(5000),
+        _FixedClock(inAnswer),
         boards: _broadcast(board(3, [('a-1', 900)])),
         allTime: _broadcast(const AllTimeBoard(top: [])),
       );
@@ -549,7 +732,7 @@ void main() {
       await _pump(
         tester,
         Stream.value(_round(openSlot: 0, now: 0)),
-        _FixedClock(5000),
+        _FixedClock(inAnswer),
         boards: _broadcast(board(2, [('alpha-1', 900), ('me-2', 700)])),
         uid: 'me-2',
       );
@@ -566,7 +749,7 @@ void main() {
       await _pump(
         tester,
         Stream.value(_round(openSlot: 0, now: 0)),
-        _FixedClock(5000),
+        _FixedClock(inAnswer),
         refusal: 'full',
       );
 
@@ -578,7 +761,7 @@ void main() {
       await _pump(
         tester,
         Stream.value(_round(openSlot: 0, now: 0)),
-        _FixedClock(5000),
+        _FixedClock(inAnswer),
         refusal: 'busy',
       );
 
@@ -592,7 +775,7 @@ void main() {
       await _pump(
         tester,
         Stream.value(_round(openSlot: 0, now: 0)),
-        _FixedClock(5000),
+        _FixedClock(inAnswer),
         refusal: 'closed',
       );
 
@@ -603,7 +786,7 @@ void main() {
       await _pump(
         tester,
         Stream.value(_round(openSlot: 0, now: 0)),
-        _FixedClock(5000),
+        _FixedClock(inAnswer),
       );
 
       expect(find.textContaining('is at capacity'), findsNothing);

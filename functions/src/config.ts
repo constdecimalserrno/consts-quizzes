@@ -15,10 +15,19 @@ import type { Firestore } from 'firebase-admin/firestore'
 export type AppConfig = {
   /** How many Slots make up a Round. */
   slotsPerRound: number
-  /** How long a Slot is on screen, start to finish. */
-  slotSeconds: number
-  /** Lead-in before a Slot's Window opens: the Question is up, Answers bounce. */
+  /**
+   * The four phases of a Slot, in order.
+   *
+   * Ported from the Rust game, where the shape earns its keep: you read before
+   * you can answer, you answer against a draining clock, you are told what the
+   * answer was, and then there is a beat before the next one. Collapsing read
+   * and answer into one phase makes the first second of every Question a
+   * scramble; collapsing away reveal means nobody ever learns anything.
+   */
   readSeconds: number
+  answerSeconds: number
+  revealSeconds: number
+  transitionSeconds: number
   /** Gap between the end of one Round and the start of the next. */
   intermissionSeconds: number
   /** Score for an instant correct Answer, decaying to `minPoints`. */
@@ -55,8 +64,10 @@ export type AppConfig = {
 
 export const DEFAULT_CONFIG: AppConfig = {
   slotsPerRound: 20,
-  slotSeconds: 15,
-  readSeconds: 4,
+  readSeconds: 3,
+  answerSeconds: 10,
+  revealSeconds: 4,
+  transitionSeconds: 2,
   intermissionSeconds: 60,
   maxPoints: 1000,
   minPoints: 100,
@@ -90,8 +101,10 @@ export async function readConfig(db: Firestore): Promise<AppConfig> {
 
   const cfg: AppConfig = {
     slotsPerRound: n('slotsPerRound'),
-    slotSeconds: n('slotSeconds'),
     readSeconds: n('readSeconds'),
+    answerSeconds: n('answerSeconds'),
+    revealSeconds: n('revealSeconds'),
+    transitionSeconds: n('transitionSeconds'),
     intermissionSeconds: n('intermissionSeconds'),
     maxPoints: n('maxPoints'),
     minPoints: n('minPoints'),
@@ -101,15 +114,17 @@ export async function readConfig(db: Firestore): Promise<AppConfig> {
     reaperDays: n('reaperDays'),
   }
 
-  // A read phase at least as long as the Slot would leave no Window at all, so
-  // the Slot could never be answered. Treat it as the typo it is.
-  if (cfg.readSeconds >= cfg.slotSeconds) {
-    cfg.readSeconds = DEFAULT_CONFIG.readSeconds
-    cfg.slotSeconds = Math.max(cfg.slotSeconds, DEFAULT_CONFIG.slotSeconds)
-  }
   if (cfg.minPoints > cfg.maxPoints) {
     cfg.minPoints = DEFAULT_CONFIG.minPoints
     cfg.maxPoints = DEFAULT_CONFIG.maxPoints
   }
   return cfg
 }
+
+/** How long one Slot takes, all four phases. */
+export const slotMillis = (cfg: AppConfig): number =>
+  (cfg.readSeconds +
+    cfg.answerSeconds +
+    cfg.revealSeconds +
+    cfg.transitionSeconds) *
+  1000

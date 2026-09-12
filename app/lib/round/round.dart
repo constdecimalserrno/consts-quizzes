@@ -1,14 +1,28 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// The Question currently on screen. Never carries the correct Choice.
+/// The four phases a Slot passes through.
+///
+/// Read before you can answer, answer against a draining clock, learn what the
+/// answer was, then a beat before the next one.
+enum Phase { read, answer, reveal, idle }
+
+/// The Question currently on screen.
+///
+/// Carries the correct Choice only once the Window has shut — before that the
+/// field is simply absent.
 class OpenQuestion {
   const OpenQuestion({
     required this.slot,
     required this.prompt,
     required this.choices,
     required this.difficulty,
+    required this.startsAt,
     required this.opensAt,
     required this.closesAt,
+    required this.revealUntil,
+    required this.endsAt,
+    this.correct,
   });
 
   final int slot;
@@ -18,18 +32,51 @@ class OpenQuestion {
 
   /// Absolute server times, in milliseconds. The client does no arithmetic on
   /// the schedule beyond comparing it to a corrected clock.
+  final int startsAt;
   final int opensAt;
   final int closesAt;
+  final int revealUntil;
+  final int endsAt;
+
+  final String? correct;
+
+  Phase phaseAt(int now) {
+    if (now < opensAt) return Phase.read;
+    if (now < closesAt) return Phase.answer;
+    // The reveal phase begins when the Window shuts, not when the answer
+    // turns up — the server takes a moment to publish it. Falling through to
+    // idle in that gap made the screen say "next question in" and then jump
+    // back to the answer, which reads as a glitch.
+    if (now < revealUntil) return Phase.reveal;
+    return Phase.idle;
+  }
+
+  /// True in the beat between the Window shutting and the answer arriving.
+  bool settlingAt(int now) =>
+      now >= closesAt && now < revealUntil && correct == null;
+
+  /// How much of the answer Window is left, as a fraction.
+  double remainingAt(int now) {
+    final span = closesAt - opensAt;
+    if (span <= 0) return 0;
+    return ((closesAt - now) / span).clamp(0.0, 1.0);
+  }
 
   static OpenQuestion? fromMap(Map<String, dynamic>? m) {
-    if (m == null) return null;
+    if (m == null || m['slot'] == null) return null;
+    int n(Object? v, int fallback) => (v as num?)?.toInt() ?? fallback;
+    final startsAt = n(m['startsAt'], 0);
     return OpenQuestion(
-      slot: (m['slot'] as num).toInt(),
-      prompt: m['prompt'] as String,
-      choices: (m['choices'] as List).cast<String>(),
+      slot: n(m['slot'], 0),
+      prompt: m['prompt'] as String? ?? '',
+      choices: ((m['choices'] as List?) ?? const []).cast<String>(),
       difficulty: m['difficulty'] as String? ?? 'easy',
-      opensAt: (m['opensAt'] as num).toInt(),
-      closesAt: (m['closesAt'] as num).toInt(),
+      startsAt: startsAt,
+      opensAt: n(m['opensAt'], startsAt),
+      closesAt: n(m['closesAt'], startsAt),
+      revealUntil: n(m['revealUntil'], n(m['closesAt'], startsAt)),
+      endsAt: n(m['endsAt'], n(m['closesAt'], startsAt)),
+      correct: m['correct'] as String?,
     );
   }
 }

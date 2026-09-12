@@ -5,11 +5,15 @@ class Standing {
     required this.uid,
     required this.handle,
     required this.score,
+    this.correct = 0,
   });
 
   final String uid;
   final String handle;
   final int score;
+
+  /// How many Questions this Player got right, for their end-of-Round line.
+  final int correct;
 }
 
 /// The live standings, as published by the Tick.
@@ -41,6 +45,7 @@ class LiveBoard {
             uid: t['uid'] as String? ?? '',
             handle: t['handle'] as String? ?? 'someone',
             score: (t['score'] as num?)?.toInt() ?? 0,
+            correct: (t['correct'] as num?)?.toInt() ?? 0,
           ),
       ],
     );

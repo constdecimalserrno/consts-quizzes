@@ -16,8 +16,15 @@ const seeded = (seed: number) => () => {
 }
 
 const SLOTS = 4
-const SLOT_MS = DEFAULT_CONFIG.slotSeconds * 1000
 const READ_MS = DEFAULT_CONFIG.readSeconds * 1000
+const ANSWER_MS = DEFAULT_CONFIG.answerSeconds * 1000
+/** A whole Slot: read, answer, reveal, then the beat before the next. */
+const SLOT_MS =
+  (DEFAULT_CONFIG.readSeconds +
+    DEFAULT_CONFIG.answerSeconds +
+    DEFAULT_CONFIG.revealSeconds +
+    DEFAULT_CONFIG.transitionSeconds) *
+  1000
 
 async function seedTheme(theme: string, perDifficulty = 12) {
   const batch = db.batch()
@@ -123,7 +130,68 @@ describe('tick', () => {
     const r = await live()
 
     expect(r.slots[0]!.opensAt).toBe(r.slots[0]!.startsAt + READ_MS)
-    expect(r.slots[0]!.opensAt).toBeLessThan(r.slots[0]!.closesAt)
+    expect(r.slots[0]!.closesAt).toBe(r.slots[0]!.opensAt + ANSWER_MS)
+  })
+
+  it('lays out all four phases in order', async () => {
+    await tick({ db, now: () => 1_000, rng: seeded(1) })
+    const p = (await live()).slots[0]!
+
+    expect(p.startsAt).toBeLessThan(p.opensAt)
+    expect(p.opensAt).toBeLessThan(p.closesAt)
+    expect(p.closesAt).toBeLessThan(p.revealUntil)
+    expect(p.revealUntil).toBeLessThan(p.endsAt)
+  })
+
+  it('runs Slots back to back with no gap', async () => {
+    await tick({ db, now: () => 1_000, rng: seeded(1) })
+    const slots = (await live()).slots
+
+    for (let i = 1; i < slots.length; i++) {
+      expect(slots[i]!.startsAt).toBe(slots[i - 1]!.endsAt)
+    }
+  })
+
+  it('publishes the answer at the reveal, and not before', async () => {
+    const start = 1_000
+    await tick({ db, now: () => start, rng: seeded(1) })
+    const plan = (await live()).slots[0]!
+
+    // Mid-Window: still secret.
+    await tick({ db, now: () => plan.opensAt + 1, rng: seeded(2) })
+    expect((await live()).question?.correct).toBeUndefined()
+
+    const result = await tick({ db, now: () => plan.closesAt + 1, rng: seeded(3) })
+    expect(result).toMatchObject({ action: 'revealed', slot: 0 })
+
+    const shown = (await live()).question!
+    const bank = await db.doc(`questions/${plan.questionId}`).get()
+    expect(shown.correct).toBe(bank.data()!.correct)
+    expect(shown.choices).toContain(shown.correct)
+  })
+
+  it('does not reveal twice', async () => {
+    const start = 1_000
+    await tick({ db, now: () => start, rng: seeded(1) })
+    const plan = (await live()).slots[0]!
+
+    await tick({ db, now: () => plan.closesAt + 1, rng: seeded(3) })
+    const again = await tick({ db, now: () => plan.closesAt + 2, rng: seeded(4) })
+
+    expect(again).toMatchObject({ action: 'idle' })
+  })
+
+  it('clears the answer when the next Slot opens', async () => {
+    const start = 1_000
+    await tick({ db, now: () => start, rng: seeded(1) })
+    const plan = (await live()).slots[0]!
+
+    await tick({ db, now: () => plan.closesAt + 1, rng: seeded(3) })
+    await tick({ db, now: () => plan.endsAt + 1, rng: seeded(5) })
+
+    const q = (await live()).question!
+    expect(q.slot).toBe(1)
+    expect(q.correct).toBeUndefined()
   })
 
   it('advances to the next Slot when the previous one closes', async () => {
@@ -140,7 +208,7 @@ describe('tick', () => {
     await tick({ db, now: () => start, rng: seeded(1) })
     const before = await live()
 
-    const result = await tick({ db, now: () => start + 1_000, rng: seeded(3) })
+    const result = await tick({ db, now: () => start + 500, rng: seeded(3) })
     expect(result).toMatchObject({ action: 'idle' })
     expect((await live()).question).toEqual(before.question)
   })

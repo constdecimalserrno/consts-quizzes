@@ -33,7 +33,7 @@ export type TickDeps = {
 export type TickResult =
   | { action: 'started'; roundId: string; theme: string }
   | { action: 'opened'; slot: number }
-  | { action: 'closed'; slot: number }
+  | { action: 'revealed'; slot: number }
   | { action: 'intermission' }
   | { action: 'idle' }
 
@@ -64,16 +64,40 @@ export async function tick(deps: TickDeps): Promise<TickResult> {
     return { action: 'started', roundId: started.id, theme: started.theme }
   }
 
-  // Which Slot should be on screen at `now`, if any.
+  // The Slot on screen at `now`, counting its reveal and the beat after it:
+  // a Slot owns the screen until the next one starts.
   const current = round.slots.findIndex(
-    (s) => now >= s.startsAt && now < s.closesAt,
+    (s) => now >= s.startsAt && now < s.endsAt,
   )
+
+  // A Slot whose Window has shut but whose answer has not been shown yet. This
+  // is the reveal, and it is a separate wake-up from opening the next Slot
+  // because the two happen seconds apart.
+  if (current >= 0 && current === round.openSlot) {
+    const plan = round.slots[current]!
+    const showing = round.question?.correct !== undefined
+    if (now >= plan.closesAt && now < plan.revealUntil && !showing) {
+      const cfg = await readConfig(db)
+      await scoreSlot(db, round, current, cfg)
+      await publishLiveBoard(db, round.id, current, now)
+
+      const bank = await db.doc(`questions/${plan.questionId}`).get()
+      await db.doc(LIVE_ROUND).set(
+        { question: { correct: bank.data()?.correct ?? '' } },
+        { merge: true },
+      )
+      await deps.schedule?.(plan.endsAt)
+      return { action: 'revealed', slot: current }
+    }
+  }
 
   if (current === -1) {
     // Past the last Slot but not yet time for the next Round: Intermission.
     if (round.openSlot !== -1) {
       const cfg = await readConfig(db)
-      await scoreSlot(db, round, round.openSlot, cfg)
+      if (round.question?.correct === undefined) {
+        await scoreSlot(db, round, round.openSlot, cfg)
+      }
       await publishLiveBoard(db, round.id, round.openSlot, now)
 
       // The Round is over, so careers settle now rather than when the next one
@@ -99,14 +123,19 @@ export async function tick(deps: TickDeps): Promise<TickResult> {
   }
 
   if (current === round.openSlot) {
-    await deps.schedule?.(round.slots[current]!.closesAt)
+    const plan = round.slots[current]!
+    // Either waiting for the Window to shut, or showing the answer and waiting
+    // for the next Slot.
+    await deps.schedule?.(now < plan.closesAt ? plan.closesAt : plan.endsAt)
     return { action: 'idle' }
   }
 
-  // The Slot that was on screen has just closed, so it is scored here, in the
-  // same step that opens the next one: one wake-up per Slot, not two.
-  if (round.openSlot >= 0) {
-    await scoreSlot(db, round, round.openSlot, await readConfig(db))
+  // A Slot that was never revealed — a dropped reveal task, or a Tick that
+  // arrived late enough to skip straight past it — is still scored, or the
+  // Answers given to it would be silently thrown away.
+  if (round.openSlot >= 0 && round.question?.correct === undefined) {
+    const cfg = await readConfig(db)
+    await scoreSlot(db, round, round.openSlot, cfg)
     await publishLiveBoard(db, round.id, round.openSlot, now)
   }
 
@@ -120,12 +149,13 @@ export async function tick(deps: TickDeps): Promise<TickResult> {
     difficulty: bank.data()?.difficulty ?? 'easy',
   }
 
-  await db.doc(LIVE_ROUND).set(
-    { openSlot: current, question: publicQuestion(q, plan, current, rng) },
-    { merge: true },
-  )
-  // The next thing to happen is this Slot closing, which is also when the next
-  // one opens: one task, not two.
+  // `update`, not `set` with merge: a merge deep-merges the nested map, so the
+  // previous Slot's revealed answer would survive into the new Question.
+  await db.doc(LIVE_ROUND).update({
+    openSlot: current,
+    question: publicQuestion(q, plan, current, rng),
+  })
+  // Next stop is this Slot's Window closing, which is the reveal.
   await deps.schedule?.(plan.closesAt)
   return { action: 'opened', slot: current }
 }
@@ -154,23 +184,20 @@ async function startRound(
     id: `r${now}`,
     theme,
     startedAt: now,
-    endsAt: last?.closesAt ?? now,
+    endsAt: last?.endsAt ?? now,
     slots,
     openSlot: -1,
     question: null,
-    nextRoundAt: (last?.closesAt ?? now) + cfg.intermissionSeconds * 1000,
+    nextRoundAt: (last?.endsAt ?? now) + cfg.intermissionSeconds * 1000,
   }
   await db.doc(LIVE_ROUND).set(round)
 
   // Open the first Slot in the same step, so a Round never begins with a gap.
   if (questions[0]) {
-    await db.doc(LIVE_ROUND).set(
-      {
-        openSlot: 0,
-        question: publicQuestion(questions[0], slots[0]!, 0, rng),
-      },
-      { merge: true },
-    )
+    await db.doc(LIVE_ROUND).update({
+      openSlot: 0,
+      question: publicQuestion(questions[0], slots[0]!, 0, rng),
+    })
     round.openSlot = 0
   }
   return round

@@ -1,19 +1,32 @@
 import { type Firestore } from 'firebase-admin/firestore'
 
-import type { AppConfig } from './config.js'
+import { slotMillis, type AppConfig } from './config.js'
 import type { Difficulty, Theme } from './themes.js'
 import { DIFFICULTIES, THEMES } from './themes.js'
 
 /** Where the live document lives. One Round is live at a time, globally. */
 export const LIVE_ROUND = 'rounds/current'
 
+/**
+ * One Slot's four phases, as absolute instants.
+ *
+ * Every time is milliseconds since the epoch so a client does no arithmetic
+ * beyond comparing them to a corrected clock:
+ *
+ *     startsAt ──read──▶ opensAt ──answer──▶ closesAt ──reveal──▶ revealUntil ──idle──▶ endsAt
+ */
 export type SlotPlan = {
   questionId: string
-  /** Milliseconds since the epoch, absolute so a client needs no arithmetic. */
+  /** The prompt goes up; Choices are still hidden. */
   startsAt: number
-  /** When Answers begin to be accepted: `startsAt` plus the read phase. */
+  /** Choices appear and Answers start being accepted. */
   opensAt: number
+  /** Answers stop being accepted; the correct Choice is published. */
   closesAt: number
+  /** The answer stops being shown. */
+  revealUntil: number
+  /** The next Slot begins. */
+  endsAt: number
 }
 
 export type Round = {
@@ -42,8 +55,19 @@ export type PublicQuestion = {
   /** Shuffled, so the correct Choice is not always in the same position. */
   choices: string[]
   difficulty: Difficulty
+  startsAt: number
   opensAt: number
   closesAt: number
+  revealUntil: number
+  endsAt: number
+  /**
+   * Written only once the Window has shut.
+   *
+   * Publishing it earlier would hand the answer to anyone reading their own
+   * traffic; publishing it at all is the point of the reveal phase, and by
+   * then no Answer can be accepted, so it gives nothing away.
+   */
+  correct?: string
 }
 
 export type Rng = () => number
@@ -178,13 +202,19 @@ export function planSlots(
   startedAt: number,
   cfg: AppConfig,
 ): SlotPlan[] {
+  const each = slotMillis(cfg)
   return questions.map((q, i) => {
-    const startsAt = startedAt + i * cfg.slotSeconds * 1000
+    const startsAt = startedAt + i * each
+    const opensAt = startsAt + cfg.readSeconds * 1000
+    const closesAt = opensAt + cfg.answerSeconds * 1000
+    const revealUntil = closesAt + cfg.revealSeconds * 1000
     return {
       questionId: q.id,
       startsAt,
-      opensAt: startsAt + cfg.readSeconds * 1000,
-      closesAt: startsAt + cfg.slotSeconds * 1000,
+      opensAt,
+      closesAt,
+      revealUntil,
+      endsAt: revealUntil + cfg.transitionSeconds * 1000,
     }
   })
 }
@@ -201,8 +231,11 @@ export function publicQuestion(
     prompt: q.prompt,
     choices: shuffle([q.correct, ...q.incorrect], rng),
     difficulty: q.difficulty,
+    startsAt: plan.startsAt,
     opensAt: plan.opensAt,
     closesAt: plan.closesAt,
+    revealUntil: plan.revealUntil,
+    endsAt: plan.endsAt,
   }
 }
 

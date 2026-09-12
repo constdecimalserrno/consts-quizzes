@@ -138,6 +138,7 @@ class _TuneInState extends State<_TuneIn> {
             bots: _botBoard(),
             uid: ready?.uid,
             anonymous: FirebaseAuth.instance.currentUser?.isAnonymous ?? false,
+            points: (max: 1000, min: 100),
           );
         },
       );

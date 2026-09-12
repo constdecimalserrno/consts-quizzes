@@ -26,6 +26,7 @@ class RoundView extends StatefulWidget {
     this.allTime,
     this.anonymous = false,
     this.bots,
+    this.points = (max: 1000, min: 100),
   });
 
   final Stream<LiveRound?> rounds;
@@ -50,6 +51,9 @@ class RoundView extends StatefulWidget {
 
   final Stream<AllTimeBoard>? bots;
 
+  /// Scoring bounds, so the meter counts down real points.
+  final ({int max, int min}) points;
+
   @override
   State<RoundView> createState() => _RoundViewState();
 }
@@ -72,10 +76,29 @@ class _RoundViewState extends State<RoundView> {
   /// how a drop-in game loses the people who dropped in.
   bool _promptDismissed = false;
 
+  /// Subscribed here rather than inside the board panel, because the
+  /// Intermission needs this Player's own line out of it too, and one listener
+  /// is one document read where two would be two.
+  StreamSubscription<LiveBoard>? _boardSub;
+  LiveBoard _live = LiveBoard.empty;
+
   @override
   void initState() {
     super.initState();
     _ticker;
+    _boardSub = widget.boards?.listen((b) {
+      if (mounted) setState(() => _live = b);
+    });
+  }
+
+  /// This Player's own line in the standings, and where it places.
+  ({int score, int correct, int rank})? get _mine {
+    final uid = widget.uid;
+    if (uid == null) return null;
+    final at = _live.top.indexWhere((s) => s.uid == uid);
+    if (at < 0) return null;
+    final row = _live.top[at];
+    return (score: row.score, correct: row.correct, rank: at + 1);
   }
 
   Future<void> _answer(LiveRound round, String choice) async {
@@ -110,6 +133,7 @@ class _RoundViewState extends State<RoundView> {
   @override
   void dispose() {
     _ticker.cancel();
+    _boardSub?.cancel();
     super.dispose();
   }
 
@@ -141,6 +165,9 @@ class _RoundViewState extends State<RoundView> {
                       refusal: widget.refusal,
                       allTime: widget.allTime,
                       bots: widget.bots,
+                      points: widget.points,
+                      mine: _mine,
+                      live: _live,
                       savePrompt: widget.anonymous && !_promptDismissed
                           ? (score) => _SavePromptSlot(
                                 score: score,
@@ -182,6 +209,9 @@ class _Broadcast extends StatelessWidget {
     required this.allTime,
     required this.bots,
     required this.savePrompt,
+    required this.points,
+    required this.mine,
+    required this.live,
   });
 
   final LiveRound round;
@@ -200,6 +230,13 @@ class _Broadcast extends StatelessWidget {
   /// to keep it.
   final Widget Function(int score)? savePrompt;
 
+  /// Scoring bounds, so the meter counts down real points.
+  final ({int max, int min}) points;
+
+  /// This Player's own result for the Round that just ended.
+  final ({int score, int correct, int rank})? mine;
+  final LiveBoard live;
+
   @override
   Widget build(BuildContext context) {
     final q = round.question;
@@ -217,18 +254,24 @@ class _Broadcast extends StatelessWidget {
               const SizedBox(height: 8),
               Expanded(
                 child: round.inIntermission
-                    ? _Intermission(round: round, clock: clock)
+                    ? _Intermission(
+                        round: round,
+                        clock: clock,
+                        mine: mine,
+                        slots: round.slotCount,
+                      )
                     : _Stage(
                         question: q!,
                         clock: clock,
                         picked: picked,
                         state: state,
                         onPick: onPick,
+                        points: points,
                       ),
               ),
               if (boards != null)
                 _Board(
-                  boards: boards!,
+                  live: live,
                   allTime: allTime,
                   bots: bots,
                   uid: uid,
@@ -328,7 +371,7 @@ class _ThemeStrip extends StatelessWidget {
   }
 }
 
-/// Question, clock, podiums.
+/// The stage: prompt, clock, podiums — one of four phases at a time.
 class _Stage extends StatelessWidget {
   const _Stage({
     required this.question,
@@ -336,6 +379,7 @@ class _Stage extends StatelessWidget {
     required this.picked,
     required this.state,
     required this.onPick,
+    required this.points,
   });
 
   final OpenQuestion question;
@@ -344,42 +388,51 @@ class _Stage extends StatelessWidget {
   final Answered state;
   final void Function(String choice)? onPick;
 
+  /// Scoring bounds, so the meter shows real numbers rather than a guess.
+  final ({int max, int min}) points;
+
   @override
   Widget build(BuildContext context) {
     final now = clock.nowMs;
-    final locked = now < question.opensAt;
-    final remaining = ((question.closesAt - now) / 1000).ceil().clamp(0, 999);
+    final phase = question.phaseAt(now);
 
     return LayoutBuilder(
       builder: (context, box) {
         final narrow = box.maxWidth < 520;
         return Column(
           children: [
-            const SizedBox(height: 18),
+            const SizedBox(height: 14),
             Flexible(
               child: Center(
                 child: Text(
                   question.prompt,
                   textAlign: TextAlign.center,
                   style: Broadcast.body(
-                    narrow ? 21 : 27,
+                    narrow ? 20 : 26,
                     weight: FontWeight.w700,
                   ),
                 ),
               ),
             ),
+            const SizedBox(height: 12),
+            _PhaseBar(question: question, phase: phase, now: now, points: points),
             const SizedBox(height: 14),
-            _Clock(seconds: remaining, locked: locked),
-            const SizedBox(height: 16),
-            _Podiums(
-              choices: question.choices,
-              narrow: narrow,
-              locked: locked,
-              picked: picked,
-              state: state,
-              onPick: onPick,
-            ),
-            const SizedBox(height: 10),
+            // Choices stay hidden while the prompt is being read. Showing them
+            // greyed out just means everyone reads them anyway and the read
+            // phase becomes a stare.
+            if (phase == Phase.read)
+              _ReadPhase(narrow: narrow)
+            else
+              _Podiums(
+                choices: question.choices,
+                narrow: narrow,
+                picked: picked,
+                state: state,
+                phase: phase,
+                correct: question.correct,
+                onPick: phase == Phase.answer ? onPick : null,
+              ),
+            const SizedBox(height: 8),
           ],
         );
       },
@@ -387,31 +440,149 @@ class _Stage extends StatelessWidget {
   }
 }
 
-/// The one loud thing on screen.
-class _Clock extends StatelessWidget {
-  const _Clock({required this.seconds, required this.locked});
+/// The read phase: the prompt, and nothing to press yet.
+class _ReadPhase extends StatelessWidget {
+  const _ReadPhase({required this.narrow});
+
+  final bool narrow;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: double.infinity,
+        padding: EdgeInsets.symmetric(vertical: narrow ? 28 : 40),
+        alignment: Alignment.center,
+        child: Text(
+          'answers in a moment…',
+          style: Broadcast.body(13, color: Broadcast.chalkDim),
+        ),
+      );
+}
+
+/// The one loud thing on screen, and what it says depends on the phase.
+class _PhaseBar extends StatelessWidget {
+  const _PhaseBar({
+    required this.question,
+    required this.phase,
+    required this.now,
+    required this.points,
+  });
+
+  final OpenQuestion question;
+  final Phase phase;
+  final int now;
+  final ({int max, int min}) points;
+
+  @override
+  Widget build(BuildContext context) => switch (phase) {
+        Phase.read => _Counter(
+            seconds: ((question.opensAt - now) / 1000).ceil().clamp(0, 999),
+            label: 'read it',
+            colour: Broadcast.cyan,
+          ),
+        Phase.answer => _PointsMeter(question: question, now: now, points: points),
+        Phase.reveal => _Counter(
+            seconds: ((question.revealUntil - now) / 1000).ceil().clamp(0, 999),
+            label: question.settlingAt(now) ? 'checking…' : 'the answer is',
+            colour: Broadcast.gold,
+          ),
+        Phase.idle => _Counter(
+            seconds: ((question.endsAt - now) / 1000).ceil().clamp(0, 999),
+            label: 'next question in',
+            colour: Broadcast.chalkDim,
+          ),
+      };
+}
+
+class _Counter extends StatelessWidget {
+  const _Counter({
+    required this.seconds,
+    required this.label,
+    required this.colour,
+  });
 
   final int seconds;
-  final bool locked;
+  final String label;
+  final Color colour;
+
+  @override
+  Widget build(BuildContext context) => Column(
+        children: [
+          Text('$seconds',
+              style: Broadcast.display(40, color: colour).copyWith(
+                shadows: [
+                  Shadow(color: colour.withValues(alpha: 0.5), blurRadius: 18),
+                ],
+              )),
+          Text(label, style: Broadcast.body(11, color: Broadcast.chalkDim)),
+        ],
+      );
+}
+
+/// The draining points meter, carried over from the terminal game.
+///
+/// It is the whole reason answering fast matters, and a bare countdown does
+/// not show it: what is running out is money, not time.
+class _PointsMeter extends StatelessWidget {
+  const _PointsMeter({
+    required this.question,
+    required this.now,
+    required this.points,
+  });
+
+  final OpenQuestion question;
+  final int now;
+  final ({int max, int min}) points;
+
+  static const _cells = 28;
 
   @override
   Widget build(BuildContext context) {
-    final colour = locked
-        ? Broadcast.cyan
-        : seconds <= 3
-            ? Broadcast.magenta
-            : Broadcast.gold;
+    final left = question.remainingAt(now);
+    final worth =
+        (points.min + (points.max - points.min) * left).round();
+    final seconds = ((question.closesAt - now) / 1000).ceil().clamp(0, 999);
+
+    // Warm as it empties, exactly as the terminal version did.
+    final colour = left > 0.66
+        ? Broadcast.gold
+        : left > 0.33
+            ? const Color(0xFFFF9A3C)
+            : Broadcast.magenta;
+    final filled = (left * _cells).round().clamp(0, _cells);
+
     return Column(
       children: [
-        Text(
-          '$seconds',
-          style: Broadcast.display(54, color: colour).copyWith(
-            shadows: [Shadow(color: colour.withValues(alpha: 0.55), blurRadius: 22)],
-          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text('${seconds}s',
+                style: Broadcast.body(13, color: Broadcast.chalkDim)),
+            const SizedBox(width: 12),
+            Text('$worth',
+                style: Broadcast.display(26, color: colour).copyWith(
+                  shadows: [
+                    Shadow(color: colour.withValues(alpha: 0.5), blurRadius: 14),
+                  ],
+                )),
+          ],
         ),
-        Text(
-          locked ? 'read it' : 'answering',
-          style: Broadcast.body(11, color: Broadcast.chalkDim),
+        const SizedBox(height: 6),
+        Semantics(
+          label: 'worth $worth points, $seconds seconds left',
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              for (var i = 0; i < _cells; i++)
+                Container(
+                  width: 7,
+                  height: 13,
+                  margin: const EdgeInsets.symmetric(horizontal: 1),
+                  color: i < filled
+                      ? colour
+                      : Broadcast.podium.withValues(alpha: 0.7),
+                ),
+            ],
+          ),
         ),
       ],
     );
@@ -422,17 +593,19 @@ class _Podiums extends StatelessWidget {
   const _Podiums({
     required this.choices,
     required this.narrow,
-    required this.locked,
     required this.picked,
     required this.state,
+    required this.phase,
+    required this.correct,
     required this.onPick,
   });
 
   final List<String> choices;
   final bool narrow;
-  final bool locked;
   final String? picked;
   final Answered state;
+  final Phase phase;
+  final String? correct;
   final void Function(String choice)? onPick;
 
   @override
@@ -442,10 +615,11 @@ class _Podiums extends StatelessWidget {
         _Podium(
           index: i,
           label: choice,
-          dimmed: locked,
           chosen: picked == choice,
           state: state,
-          onTap: locked || onPick == null || state != Answered.no
+          phase: phase,
+          isCorrect: correct != null && choice == correct,
+          onTap: onPick == null || state != Answered.no
               ? null
               : () => onPick!(choice),
         ),
@@ -470,111 +644,206 @@ class _Podiums extends StatelessWidget {
 }
 
 /// A contestant's podium: a face, a bevel, and a hard shadow under it.
+///
+/// During the reveal it stops being a button and becomes a result: the right
+/// answer lights up whether or not anybody picked it, and a wrong pick is
+/// marked as wrong rather than quietly dropped.
 class _Podium extends StatelessWidget {
   const _Podium({
     required this.index,
     required this.label,
-    required this.dimmed,
     required this.chosen,
     required this.state,
+    required this.phase,
+    required this.isCorrect,
     required this.onTap,
   });
 
   final int index;
   final String label;
-  final bool dimmed;
   final bool chosen;
   final Answered state;
+  final Phase phase;
+  final bool isCorrect;
   final VoidCallback? onTap;
 
   static const _keys = ['1', '2', '3', '4'];
+  static const _right = Color(0xFF35D17E);
+
+  bool get _revealing => phase == Phase.reveal || phase == Phase.idle;
 
   Color get _edge {
+    if (_revealing) {
+      if (isCorrect) return _right;
+      if (chosen) return Broadcast.magenta;
+      return Broadcast.podiumEdge;
+    }
     if (!chosen) return Broadcast.podiumEdge;
+    return state == Answered.rejected ? Broadcast.magenta : Broadcast.gold;
+  }
+
+  double get _dim {
+    if (!_revealing) return 1;
+    // Everything that is neither the answer nor your guess steps back.
+    return isCorrect || chosen ? 1 : 0.4;
+  }
+
+  String? get _tag {
+    if (_revealing) {
+      if (isCorrect && chosen) return 'you got it';
+      if (isCorrect) return 'correct';
+      if (chosen) return 'not this one';
+      return null;
+    }
+    if (!chosen) return null;
     return switch (state) {
-      Answered.rejected => Broadcast.magenta,
-      _ => Broadcast.gold,
+      Answered.sending => 'sending',
+      Answered.sent => 'locked in',
+      Answered.rejected => 'too late',
+      Answered.no => null,
     };
   }
 
   @override
-  Widget build(BuildContext context) => Semantics(
-        button: onTap != null,
-        selected: chosen,
-        label: label,
-        child: AnimatedOpacity(
-          duration: const Duration(milliseconds: 200),
-          opacity: dimmed ? 0.45 : 1,
-          child: Material(
-            color: chosen ? Broadcast.setNavy : Broadcast.podium,
-            child: InkWell(
-              onTap: onTap,
-              child: Container(
-                width: double.infinity,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                decoration: BoxDecoration(
-                  border: Border.all(color: _edge, width: chosen ? 3 : 2),
-                  boxShadow: Broadcast.bevel,
+  Widget build(BuildContext context) {
+    final tag = _tag;
+    return Semantics(
+      button: onTap != null,
+      selected: chosen,
+      label: label,
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 220),
+        opacity: _dim,
+        child: Material(
+          color: _revealing && isCorrect
+              ? const Color(0xFF14402C)
+              : chosen
+                  ? Broadcast.setNavy
+                  : Broadcast.podium,
+          child: InkWell(
+            onTap: onTap,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: _edge,
+                  width: chosen || (_revealing && isCorrect) ? 3 : 2,
                 ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 26,
-                      height: 26,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: chosen ? Broadcast.magenta : Broadcast.gold,
-                      ),
-                      child: Text(
-                        _keys[index],
-                        style: Broadcast.body(13,
-                            color: Broadcast.setDeep, weight: FontWeight.w800),
-                      ),
+                boxShadow: Broadcast.bevel,
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 26,
+                    height: 26,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: _revealing && isCorrect
+                          ? _right
+                          : chosen
+                              ? Broadcast.magenta
+                              : Broadcast.gold,
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(child: Text(label, style: Broadcast.body(15))),
-                    if (chosen)
-                      Text(
-                        switch (state) {
-                          Answered.sending => 'sending',
-                          Answered.sent => 'locked in',
-                          Answered.rejected => 'too late',
-                          Answered.no => '',
-                        },
-                        style: Broadcast.body(11,
-                            color: state == Answered.rejected
-                                ? Broadcast.magenta
-                                : Broadcast.gold),
-                      ),
-                  ],
-                ),
+                    child: Text(
+                      _keys[index],
+                      style: Broadcast.body(13,
+                          color: Broadcast.setDeep, weight: FontWeight.w800),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text(label, style: Broadcast.body(15))),
+                  if (tag != null)
+                    Text(
+                      tag,
+                      style: Broadcast.body(11,
+                          color: _revealing && isCorrect
+                              ? _right
+                              : chosen && _revealing
+                                  ? Broadcast.magenta
+                                  : state == Answered.rejected
+                                      ? Broadcast.magenta
+                                      : Broadcast.gold),
+                    ),
+                ],
               ),
             ),
           ),
         ),
-      );
+      ),
+    );
+  }
 }
 
+/// How a Round is graded, carried over from the terminal game.
+///
+/// The line is the only thing on the screen that talks back, so it earns its
+/// place: nought out of twenty deserves something other than silence.
+String banterFor(int correct, int total) {
+  if (total <= 0) return 'Stick around — the next one starts shortly.';
+  final pct = correct / total;
+  if (pct == 1) return 'A perfect round. Nobody does that.';
+  if (pct >= 0.8) return 'Outstanding — a whisker off the lot.';
+  if (pct >= 0.5) return 'Solid showing. The trophy is in sight.';
+  if (correct > 0) return 'A few on the board. Warm up and go again.';
+  return 'Everyone starts somewhere. Run it back.';
+}
+
+/// Between Rounds: how you did, what is next, and how long you have.
 class _Intermission extends StatelessWidget {
-  const _Intermission({required this.round, required this.clock});
+  const _Intermission({
+    required this.round,
+    required this.clock,
+    required this.mine,
+    required this.slots,
+  });
 
   final LiveRound round;
   final ServerClock clock;
 
+  /// This Player's own result, absent if they did not answer anything.
+  final ({int score, int correct, int rank})? mine;
+  final int slots;
+
   @override
   Widget build(BuildContext context) {
-    final left = ((round.nextRoundAt - clock.nowMs) / 1000).ceil().clamp(0, 9999);
+    final left =
+        ((round.nextRoundAt - clock.nowMs) / 1000).ceil().clamp(0, 9999);
     final next = round.nextTheme;
-    return Center(
+    final me = mine;
+
+    return SingleChildScrollView(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text('final scores',
-              style: Broadcast.body(16, color: Broadcast.chalkDim)),
-          const SizedBox(height: 14),
+          const SizedBox(height: 10),
+          if (me != null) ...[
+            Text('that round',
+                style: Broadcast.body(12, color: Broadcast.chalkDim)),
+            const SizedBox(height: 6),
+            Text('${me.score}',
+                style: Broadcast.display(42, color: Broadcast.gold)),
+            const SizedBox(height: 4),
+            Text(
+              '${me.correct} of $slots right'
+              '${me.rank > 0 ? '  ·  #${me.rank}' : ''}',
+              style: Broadcast.body(13),
+            ),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Text(
+                banterFor(me.correct, slots),
+                textAlign: TextAlign.center,
+                style: Broadcast.body(13, color: Broadcast.cyan),
+              ),
+            ),
+          ] else
+            Text('final scores',
+                style: Broadcast.body(14, color: Broadcast.chalkDim)),
+          const SizedBox(height: 16),
           if (next != null) ...[
-            Text('next up', style: Broadcast.body(12, color: Broadcast.chalkDim)),
+            Text('next up', style: Broadcast.body(11, color: Broadcast.chalkDim)),
             const SizedBox(height: 4),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -583,26 +852,25 @@ class _Intermission extends StatelessWidget {
                 child: Text(
                   next,
                   textAlign: TextAlign.center,
-                  style: Broadcast.display(24, color: Broadcast.gold),
+                  style: Broadcast.display(22, color: Broadcast.gold),
                 ),
               ),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 10),
           ],
-          Text('$left', style: Broadcast.display(48, color: Broadcast.cyan)),
-          Text('seconds', style: Broadcast.body(12, color: Broadcast.chalkDim)),
+          Text('$left', style: Broadcast.display(34, color: Broadcast.cyan)),
+          Text('seconds', style: Broadcast.body(11, color: Broadcast.chalkDim)),
         ],
       ),
     );
   }
 }
 
-
 /// The standings, as a ticker under the stage during a Round and opened out
 /// during the Intermission, when there is nothing else to look at.
 class _Board extends StatefulWidget {
   const _Board({
-    required this.boards,
+    required this.live,
     required this.allTime,
     required this.bots,
     required this.uid,
@@ -610,7 +878,7 @@ class _Board extends StatefulWidget {
     required this.savePrompt,
   });
 
-  final Stream<LiveBoard> boards;
+  final LiveBoard live;
   final Stream<AllTimeBoard>? allTime;
   final Stream<AllTimeBoard>? bots;
   final String? uid;
@@ -627,11 +895,9 @@ class _Board extends StatefulWidget {
 /// every toggle costs a fresh document read each time, and the two boards
 /// together are two documents whatever the viewer does.
 class _BoardState extends State<_Board> {
-  late final StreamSubscription<LiveBoard> _liveSub;
   StreamSubscription<AllTimeBoard>? _careerSub;
   StreamSubscription<AllTimeBoard>? _botSub;
 
-  LiveBoard _live = LiveBoard.empty;
   AllTimeBoard _careers = AllTimeBoard.empty;
   AllTimeBoard _botBoard = AllTimeBoard.empty;
 
@@ -641,9 +907,6 @@ class _BoardState extends State<_Board> {
   @override
   void initState() {
     super.initState();
-    _liveSub = widget.boards.listen((b) {
-      if (mounted) setState(() => _live = b);
-    });
     _careerSub = widget.allTime?.listen((b) {
       if (mounted) setState(() => _careers = b);
     });
@@ -654,7 +917,6 @@ class _BoardState extends State<_Board> {
 
   @override
   void dispose() {
-    _liveSub.cancel();
     _careerSub?.cancel();
     _botSub?.cancel();
     super.dispose();
@@ -677,13 +939,13 @@ class _BoardState extends State<_Board> {
         onBack: () => setState(() => _view = 0),
       );
     }
-    final mine = _live.top.where((s) => s.uid == widget.uid).firstOrNull;
+    final mine = widget.live.top.where((s) => s.uid == widget.uid).firstOrNull;
     final prompt = widget.savePrompt;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         _RoundPanel(
-          board: _live,
+          board: widget.live,
           uid: widget.uid,
           compact: widget.compact,
           onAllTime: canSwitch ? () => setState(() => _view = 1) : null,
