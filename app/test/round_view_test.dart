@@ -20,12 +20,14 @@ LiveRound _round({
   required int openSlot,
   required int now,
   String theme = 'Geography',
+  String? nextTheme,
   int readMs = 4000,
   int slotMs = 15000,
 }) =>
     LiveRound(
       id: 'r1',
       theme: theme,
+      nextTheme: nextTheme,
       slotCount: 20,
       openSlot: openSlot,
       question: openSlot < 0
@@ -185,8 +187,31 @@ void main() {
     );
 
     expect(find.text('between rounds'), findsOneWidget);
-    expect(find.text('that round is over'), findsOneWidget);
+    expect(find.text('final scores'), findsOneWidget);
     expect(find.text('30'), findsOneWidget);
+  });
+
+  testWidgets('announces the next Theme during the Intermission',
+      (tester) async {
+    await _pump(
+      tester,
+      Stream.value(_round(openSlot: -1, now: 0, nextTheme: 'Mythology')),
+      _FixedClock(30000),
+    );
+
+    expect(find.text('next up'), findsOneWidget);
+    expect(find.text('Mythology'), findsOneWidget);
+  });
+
+  testWidgets('does not promise a next Theme before one is chosen',
+      (tester) async {
+    await _pump(
+      tester,
+      Stream.value(_round(openSlot: -1, now: 0)),
+      _FixedClock(30000),
+    );
+
+    expect(find.text('next up'), findsNothing);
   });
 
   testWidgets('lays out at phone width without overflowing', (tester) async {

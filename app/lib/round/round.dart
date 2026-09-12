@@ -43,6 +43,7 @@ class LiveRound {
     required this.openSlot,
     required this.question,
     required this.nextRoundAt,
+    this.nextTheme,
   });
 
   final String id;
@@ -53,6 +54,9 @@ class LiveRound {
   final int openSlot;
   final OpenQuestion? question;
   final int nextRoundAt;
+
+  /// Announced when the Round ends, so the Intermission has something to sell.
+  final String? nextTheme;
 
   bool get inIntermission => openSlot < 0 || question == null;
 
@@ -76,6 +80,7 @@ class LiveRound {
         (d['question'] as Map?)?.cast<String, dynamic>(),
       ),
       nextRoundAt: (d['nextRoundAt'] as num?)?.toInt() ?? 0,
+      nextTheme: d['nextTheme'] as String?,
     );
   }
 }

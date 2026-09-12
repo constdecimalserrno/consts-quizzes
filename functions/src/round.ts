@@ -27,6 +27,13 @@ export type Round = {
   /** Denormalised copy of the open Slot's Question. Never the correct Choice. */
   question: PublicQuestion | null
   nextRoundAt: number
+  /**
+   * The Theme the next Round will use, chosen when this one ends.
+   *
+   * Decided at the Intermission rather than when the next Round starts,
+   * because the Intermission's job is to make you want to stay for it.
+   */
+  nextTheme?: Theme
 }
 
 export type PublicQuestion = {

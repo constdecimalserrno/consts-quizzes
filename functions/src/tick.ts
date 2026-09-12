@@ -57,7 +57,7 @@ export async function tick(deps: TickDeps): Promise<TickResult> {
   const round = snap.exists ? (snap.data() as Round) : null
 
   if (!round || now >= round.nextRoundAt) {
-    const started = await startRound(deps, rng, now, round?.theme)
+    const started = await startRound(deps, rng, now, round?.theme, round?.nextTheme)
     await deps.schedule?.(started.slots[0]!.closesAt)
     return { action: 'started', roundId: started.id, theme: started.theme }
   }
@@ -70,10 +70,17 @@ export async function tick(deps: TickDeps): Promise<TickResult> {
   if (current === -1) {
     // Past the last Slot but not yet time for the next Round: Intermission.
     if (round.openSlot !== -1) {
-      await scoreSlot(db, round, round.openSlot, await readConfig(db))
+      const cfg = await readConfig(db)
+      await scoreSlot(db, round, round.openSlot, cfg)
       await publishLiveBoard(db, round.id, round.openSlot, now)
+
+      const upcoming = await fillableThemes(db, cfg.slotsPerRound, round.theme)
       await db.doc(LIVE_ROUND).set(
-        { openSlot: -1, question: null },
+        {
+          openSlot: -1,
+          question: null,
+          nextTheme: upcoming[Math.floor(rng() * upcoming.length)]!,
+        },
         { merge: true },
       )
       await deps.schedule?.(round.nextRoundAt)
@@ -120,12 +127,17 @@ async function startRound(
   rng: Rng,
   now: number,
   previousTheme?: Theme,
+  announced?: Theme,
 ): Promise<Round> {
   const { db } = deps
   const cfg = await readConfig(db)
 
+  // If the Intermission already told the audience what is coming, honour it.
+  // Announcing one Theme and then running another is worse than not announcing.
   const themes = await fillableThemes(db, cfg.slotsPerRound, previousTheme)
-  const theme = themes[Math.floor(rng() * themes.length)]!
+  const theme = announced && themes.includes(announced)
+    ? announced
+    : themes[Math.floor(rng() * themes.length)]!
   const questions = await drawSlots(db, theme, cfg.slotsPerRound, rng)
   const slots = planSlots(questions, now, cfg)
   const last = slots[slots.length - 1]

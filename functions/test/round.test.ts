@@ -19,6 +19,24 @@ const SLOTS = 4
 const SLOT_MS = DEFAULT_CONFIG.slotSeconds * 1000
 const READ_MS = DEFAULT_CONFIG.readSeconds * 1000
 
+async function seedTheme(theme: string, perDifficulty = 12) {
+  const batch = db.batch()
+  for (const difficulty of ['easy', 'medium', 'hard'] as const) {
+    for (let i = 0; i < perDifficulty; i++) {
+      batch.set(db.doc(`questions/${theme}-${difficulty}-${i}`), {
+        theme,
+        difficulty,
+        prompt: `${theme} ${difficulty} ${i}`,
+        correct: `right-${theme}-${difficulty}-${i}`,
+        incorrect: ['w1', 'w2', 'w3'],
+        source: 'test',
+        fetchedAt: 0,
+      })
+    }
+  }
+  await batch.commit()
+}
+
 async function seedBank(perDifficulty = 12) {
   const batch = db.batch()
   for (const difficulty of ['easy', 'medium', 'hard'] as const) {
@@ -157,21 +175,7 @@ describe('tick', () => {
 
   it('does not run the same Theme twice in a row', async () => {
     // Two Themes can fill a Round; the draw must alternate rather than repeat.
-    const batch = db.batch()
-    for (const difficulty of ['easy', 'medium', 'hard'] as const) {
-      for (let i = 0; i < 12; i++) {
-        batch.set(db.doc(`questions/geo-${difficulty}-${i}`), {
-          theme: 'Geography',
-          difficulty,
-          prompt: `geo ${difficulty} ${i}`,
-          correct: 'right',
-          incorrect: ['a', 'b', 'c'],
-          source: 'test',
-          fetchedAt: 0,
-        })
-      }
-    }
-    await batch.commit()
+    await seedTheme('Geography')
 
     let now = 1_000
     const themes: string[] = []
@@ -184,6 +188,37 @@ describe('tick', () => {
     for (let i = 1; i < themes.length; i++) {
       expect(themes[i]).not.toBe(themes[i - 1])
     }
+  })
+
+  it('announces the next Theme during the Intermission', async () => {
+    // Needs somewhere else to go: with one fillable Theme, repeating it is
+    // correct rather than a bug.
+    await seedTheme('Geography')
+    const start = 1_000
+    await tick({ db, now: () => start, rng: seeded(1) })
+
+    await tick({
+      db,
+      now: () => start + SLOT_MS * SLOTS + 10,
+      rng: seeded(5),
+    })
+
+    const r = await live()
+    expect(r.openSlot).toBe(-1)
+    expect(r.nextTheme).toBeDefined()
+    expect(r.nextTheme).not.toBe(r.theme)
+  })
+
+  it('runs the Theme it announced', async () => {
+    await seedTheme('Geography')
+    const start = 1_000
+    await tick({ db, now: () => start, rng: seeded(1) })
+    await tick({ db, now: () => start + SLOT_MS * SLOTS + 10, rng: seeded(5) })
+    const announced = (await live()).nextTheme
+
+    const at = (await live()).nextRoundAt + 1
+    await tick({ db, now: () => at, rng: seeded(6) })
+    expect((await live()).theme).toBe(announced)
   })
 
   it('starts the next Round when the Intermission is over', async () => {

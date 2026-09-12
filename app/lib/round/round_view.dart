@@ -517,16 +517,32 @@ class _Intermission extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final left = ((round.nextRoundAt - clock.nowMs) / 1000).ceil().clamp(0, 9999);
+    final next = round.nextTheme;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text('that round is over',
+          Text('final scores',
               style: Broadcast.body(16, color: Broadcast.chalkDim)),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
+          if (next != null) ...[
+            Text('next up', style: Broadcast.body(12, color: Broadcast.chalkDim)),
+            const SizedBox(height: 4),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  next,
+                  textAlign: TextAlign.center,
+                  style: Broadcast.display(24, color: Broadcast.gold),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+          ],
           Text('$left', style: Broadcast.display(48, color: Broadcast.cyan)),
-          const SizedBox(height: 6),
-          Text('until the next one', style: Broadcast.body(14)),
+          Text('seconds', style: Broadcast.body(12, color: Broadcast.chalkDim)),
         ],
       ),
     );
