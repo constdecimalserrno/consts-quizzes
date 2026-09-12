@@ -61,6 +61,11 @@ Stream<LiveBoard> _liveBoard() => FirebaseFirestore.instance
     .snapshots()
     .map(LiveBoard.fromSnapshot);
 
+Stream<AllTimeBoard> _allTimeBoard() => FirebaseFirestore.instance
+    .doc('leaderboards/allTime')
+    .snapshots()
+    .map(AllTimeBoard.fromSnapshot);
+
 class ConstsQuizzesApp extends StatelessWidget {
   const ConstsQuizzesApp({super.key});
 
@@ -124,6 +129,7 @@ class _TuneInState extends State<_TuneIn> {
                   ),
             refusal: ready?.refusal,
             boards: _liveBoard(),
+            allTime: _allTimeBoard(),
             uid: ready?.uid,
           );
         },

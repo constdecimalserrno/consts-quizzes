@@ -46,3 +46,49 @@ class LiveBoard {
     );
   }
 }
+
+
+/// A Player's standing across every Round they have played.
+class CareerStanding {
+  const CareerStanding({
+    required this.uid,
+    required this.handle,
+    required this.averageScore,
+    required this.bestRound,
+    required this.roundsPlayed,
+  });
+
+  final String uid;
+  final String handle;
+  final int averageScore;
+  final int bestRound;
+  final int roundsPlayed;
+}
+
+/// The all-time board: ranked on average score, not lifetime total.
+class AllTimeBoard {
+  const AllTimeBoard({required this.top});
+
+  final List<CareerStanding> top;
+
+  static const empty = AllTimeBoard(top: []);
+
+  static AllTimeBoard fromSnapshot(
+    DocumentSnapshot<Map<String, dynamic>> snap,
+  ) {
+    final d = snap.data();
+    if (d == null) return empty;
+    return AllTimeBoard(
+      top: [
+        for (final t in (d['top'] as List? ?? []))
+          CareerStanding(
+            uid: t['uid'] as String? ?? '',
+            handle: t['handle'] as String? ?? 'someone',
+            averageScore: (t['averageScore'] as num?)?.toInt() ?? 0,
+            bestRound: (t['bestRound'] as num?)?.toInt() ?? 0,
+            roundsPlayed: (t['roundsPlayed'] as num?)?.toInt() ?? 0,
+          ),
+      ],
+    );
+  }
+}

@@ -34,6 +34,21 @@ export type AppConfig = {
    * on the way in. Changing this is a spending decision, not a config tweak.
    */
   maxConcurrentPlayers: number
+  /**
+   * How many Rounds a Player must finish before they are ranked all-time.
+   *
+   * Ranking on average without a floor means one lucky Round tops the board
+   * forever.
+   */
+  minRankedRounds: number
+  /**
+   * The last Slot a Player can join on and still have the Round count toward
+   * their average.
+   *
+   * Without this, dropping in near the end permanently damages a rating and
+   * people stop dropping in — which is the one thing this game is for.
+   */
+  rankedJoinBySlot: number
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -44,6 +59,8 @@ export const DEFAULT_CONFIG: AppConfig = {
   maxPoints: 1000,
   minPoints: 100,
   maxConcurrentPlayers: 120,
+  minRankedRounds: 3,
+  rankedJoinBySlot: 5,
 }
 
 const positive = (v: unknown, fallback: number): number =>
@@ -76,6 +93,8 @@ export async function readConfig(db: Firestore): Promise<AppConfig> {
     maxPoints: n('maxPoints'),
     minPoints: n('minPoints'),
     maxConcurrentPlayers: n('maxConcurrentPlayers'),
+    minRankedRounds: n('minRankedRounds'),
+    rankedJoinBySlot: n('rankedJoinBySlot'),
   }
 
   // A read phase at least as long as the Slot would leave no Window at all, so

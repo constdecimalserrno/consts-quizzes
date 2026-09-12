@@ -1,5 +1,6 @@
 import { type Firestore } from 'firebase-admin/firestore'
 
+import { foldRoundIntoCareers, publishAllTimeBoard } from './alltime.js'
 import { scoreSlot } from './answers.js'
 import { publishLiveBoard } from './leaderboard.js'
 import { readConfig } from './config.js'
@@ -73,6 +74,11 @@ export async function tick(deps: TickDeps): Promise<TickResult> {
       const cfg = await readConfig(db)
       await scoreSlot(db, round, round.openSlot, cfg)
       await publishLiveBoard(db, round.id, round.openSlot, now)
+
+      // The Round is over, so careers settle now rather than when the next one
+      // starts: the Intermission is exactly when somebody looks at the board.
+      await foldRoundIntoCareers(db, round.id, cfg)
+      await publishAllTimeBoard(db, cfg, now)
 
       const upcoming = await fillableThemes(db, cfg.slotsPerRound, round.theme)
       await db.doc(LIVE_ROUND).set(

@@ -22,6 +22,7 @@ class RoundView extends StatefulWidget {
     this.boards,
     this.uid,
     this.refusal,
+    this.allTime,
   });
 
   final Stream<LiveRound?> rounds;
@@ -38,6 +39,8 @@ class RoundView extends StatefulWidget {
 
   /// Why this visitor cannot answer: 'full', 'closed', or absent if they can.
   final String? refusal;
+
+  final Stream<AllTimeBoard>? allTime;
 
   @override
   State<RoundView> createState() => _RoundViewState();
@@ -124,6 +127,7 @@ class _RoundViewState extends State<RoundView> {
                       boards: widget.boards,
                       uid: widget.uid,
                       refusal: widget.refusal,
+                      allTime: widget.allTime,
                     );
                   },
                 ),
@@ -155,6 +159,7 @@ class _Broadcast extends StatelessWidget {
     required this.boards,
     required this.uid,
     required this.refusal,
+    required this.allTime,
   });
 
   final LiveRound round;
@@ -166,6 +171,7 @@ class _Broadcast extends StatelessWidget {
   final Stream<LiveBoard>? boards;
   final String? uid;
   final String? refusal;
+  final Stream<AllTimeBoard>? allTime;
 
   @override
   Widget build(BuildContext context) {
@@ -194,7 +200,12 @@ class _Broadcast extends StatelessWidget {
                       ),
               ),
               if (boards != null)
-                _Board(boards: boards!, uid: uid, compact: !round.inIntermission),
+                _Board(
+                  boards: boards!,
+                  allTime: allTime,
+                  uid: uid,
+                  compact: !round.inIntermission,
+                ),
             ],
           ),
         ),
@@ -560,84 +571,250 @@ class _Intermission extends StatelessWidget {
 
 /// The standings, as a ticker under the stage during a Round and opened out
 /// during the Intermission, when there is nothing else to look at.
-class _Board extends StatelessWidget {
-  const _Board({required this.boards, required this.uid, required this.compact});
+class _Board extends StatefulWidget {
+  const _Board({
+    required this.boards,
+    required this.allTime,
+    required this.uid,
+    required this.compact,
+  });
 
   final Stream<LiveBoard> boards;
+  final Stream<AllTimeBoard>? allTime;
   final String? uid;
   final bool compact;
 
   @override
-  Widget build(BuildContext context) => StreamBuilder<LiveBoard>(
-        stream: boards,
-        builder: (context, snap) {
-          final board = snap.data ?? LiveBoard.empty;
-          if (board.top.isEmpty) {
-            return Padding(
-              padding: const EdgeInsets.only(top: 10),
-              child: Text(
-                board.playing == 0
-                    ? 'nobody has answered yet'
-                    : '${board.playing} playing',
-                style: Broadcast.body(12, color: Broadcast.chalkDim),
-              ),
-            );
-          }
-          final shown = compact ? board.top.take(3).toList() : board.top;
-          return Container(
-            margin: const EdgeInsets.only(top: 10),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: Broadcast.setDeep.withValues(alpha: 0.55),
-              border: Border.all(color: Broadcast.podiumEdge, width: 2),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('leaders', style: Broadcast.body(12, color: Broadcast.gold)),
-                    Text('${board.playing} playing',
-                        style: Broadcast.body(12, color: Broadcast.chalkDim)),
+  State<_Board> createState() => _BoardState();
+}
+
+/// Holds both boards open at once and renders whichever is being looked at.
+///
+/// Switching view does not resubscribe: a Firestore listener re-attached on
+/// every toggle costs a fresh document read each time, and the two boards
+/// together are two documents whatever the viewer does.
+class _BoardState extends State<_Board> {
+  late final StreamSubscription<LiveBoard> _liveSub;
+  StreamSubscription<AllTimeBoard>? _careerSub;
+
+  LiveBoard _live = LiveBoard.empty;
+  AllTimeBoard _careers = AllTimeBoard.empty;
+  bool _showAllTime = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _liveSub = widget.boards.listen((b) {
+      if (mounted) setState(() => _live = b);
+    });
+    _careerSub = widget.allTime?.listen((b) {
+      if (mounted) setState(() => _careers = b);
+    });
+  }
+
+  @override
+  void dispose() {
+    _liveSub.cancel();
+    _careerSub?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // The all-time board is only worth the room when a Round is not using it.
+    final canSwitch = widget.allTime != null && !widget.compact;
+    if (_showAllTime && canSwitch) {
+      return _AllTimePanel(
+        careers: _careers,
+        uid: widget.uid,
+        onBack: () => setState(() => _showAllTime = false),
+      );
+    }
+    return _RoundPanel(
+      board: _live,
+      uid: widget.uid,
+      compact: widget.compact,
+      onAllTime: canSwitch ? () => setState(() => _showAllTime = true) : null,
+    );
+  }
+}
+
+class _RoundPanel extends StatelessWidget {
+  const _RoundPanel({
+    required this.board,
+    required this.uid,
+    required this.compact,
+    required this.onAllTime,
+  });
+
+  final LiveBoard board;
+  final String? uid;
+  final bool compact;
+  final VoidCallback? onAllTime;
+
+  @override
+  Widget build(BuildContext context) {
+    if (board.top.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 10),
+        child: Text(
+          board.playing == 0
+              ? 'nobody has answered yet'
+              : '${board.playing} playing',
+          style: Broadcast.body(12, color: Broadcast.chalkDim),
+        ),
+      );
+    }
+    final shown = compact ? board.top.take(3).toList() : board.top;
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Broadcast.setDeep.withValues(alpha: 0.55),
+        border: Border.all(color: Broadcast.podiumEdge, width: 2),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('leaders', style: Broadcast.body(12, color: Broadcast.gold)),
+              Row(
+                children: [
+                  Text('${board.playing} playing',
+                      style: Broadcast.body(12, color: Broadcast.chalkDim)),
+                  if (onAllTime != null) ...[
+                    const SizedBox(width: 10),
+                    _BoardLink(label: 'all time', onTap: onAllTime!),
                   ],
-                ),
-                const SizedBox(height: 6),
-                for (final (i, s) in shown.indexed)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Row(
-                      children: [
-                        SizedBox(
-                          width: 22,
-                          child: Text('${i + 1}',
-                              style: Broadcast.body(12,
-                                  color: Broadcast.chalkDim)),
-                        ),
-                        Expanded(
-                          child: Text(
-                            s.handle,
-                            overflow: TextOverflow.ellipsis,
-                            style: Broadcast.body(
-                              13,
-                              color: s.uid == uid
-                                  ? Broadcast.magenta
-                                  : Broadcast.chalk,
-                            ),
-                          ),
-                        ),
-                        Text('${s.score}',
-                            style: Broadcast.body(13, color: Broadcast.gold)),
-                      ],
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          for (final (i, s) in shown.indexed)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 22,
+                    child: Text('${i + 1}',
+                        style: Broadcast.body(12, color: Broadcast.chalkDim)),
+                  ),
+                  Expanded(
+                    child: Text(
+                      s.handle,
+                      overflow: TextOverflow.ellipsis,
+                      style: Broadcast.body(
+                        13,
+                        color: s.uid == uid ? Broadcast.magenta : Broadcast.chalk,
+                      ),
                     ),
                   ),
-              ],
+                  Text('${s.score}',
+                      style: Broadcast.body(13, color: Broadcast.gold)),
+                ],
+              ),
             ),
-          );
-        },
+        ],
+      ),
+    );
+  }
+}
+
+class _BoardLink extends StatelessWidget {
+  const _BoardLink({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          child: Text(label, style: Broadcast.body(12, color: Broadcast.cyan)),
+        ),
       );
 }
 
+/// Careers, ranked on average score.
+class _AllTimePanel extends StatelessWidget {
+  const _AllTimePanel({
+    required this.careers,
+    required this.uid,
+    required this.onBack,
+  });
+
+  final AllTimeBoard careers;
+  final String? uid;
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    final top = careers.top;
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Broadcast.setDeep.withValues(alpha: 0.55),
+        border: Border.all(color: Broadcast.podiumEdge, width: 2),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('all time, by average round',
+                  style: Broadcast.body(12, color: Broadcast.gold)),
+              _BoardLink(label: 'this round', onTap: onBack),
+            ],
+          ),
+          const SizedBox(height: 6),
+          if (top.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Text(
+                'Nobody has finished enough rounds yet.',
+                style: Broadcast.body(12, color: Broadcast.chalkDim),
+              ),
+            ),
+          for (final (i, c) in top.indexed)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 22,
+                    child: Text('${i + 1}',
+                        style: Broadcast.body(12, color: Broadcast.chalkDim)),
+                  ),
+                  Expanded(
+                    child: Text(
+                      c.handle,
+                      overflow: TextOverflow.ellipsis,
+                      style: Broadcast.body(13,
+                          color: c.uid == uid
+                              ? Broadcast.magenta
+                              : Broadcast.chalk),
+                    ),
+                  ),
+                  Text('best ${c.bestRound}',
+                      style: Broadcast.body(11, color: Broadcast.chalkDim)),
+                  const SizedBox(width: 10),
+                  Text('${c.averageScore}',
+                      style: Broadcast.body(13, color: Broadcast.gold)),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
 
 /// Why this visitor is watching rather than playing.
 ///

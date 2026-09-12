@@ -43,6 +43,12 @@ LiveRound _round({
       nextRoundAt: now + 60000,
     );
 
+/// Firestore's snapshot streams are broadcast, and the board panels subscribe
+/// and unsubscribe as the viewer switches between them. A single-subscription
+/// stream would throw on the second listen, which is a property of the test
+/// double rather than of the widget.
+Stream<T> _broadcast<T>(T value) => Stream<T>.value(value).asBroadcastStream();
+
 /// Records what was submitted, and can be told to refuse.
 class _FakeSink implements AnswerSink {
   final submitted = <String>[];
@@ -63,6 +69,7 @@ Future<void> _pump(
   Stream<LiveBoard>? boards,
   String? uid,
   String? refusal,
+  Stream<AllTimeBoard>? allTime,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -74,6 +81,7 @@ Future<void> _pump(
         boards: boards,
         uid: uid,
         refusal: refusal,
+        allTime: allTime,
       ),
     ),
   );
@@ -348,7 +356,7 @@ void main() {
         tester,
         Stream.value(_round(openSlot: 0, now: 0)),
         _FixedClock(5000),
-        boards: Stream.value(board(0, [])),
+        boards: _broadcast(board(0, [])),
       );
       expect(find.text('nobody has answered yet'), findsOneWidget);
     });
@@ -359,7 +367,7 @@ void main() {
         tester,
         Stream.value(_round(openSlot: 0, now: 0)),
         _FixedClock(5000),
-        boards: Stream.value(
+        boards: _broadcast(
           board(1483, [('alpha-1', 900), ('beta-2', 700), ('gamma-3', 500)]),
         ),
       );
@@ -375,7 +383,7 @@ void main() {
         tester,
         Stream.value(_round(openSlot: 0, now: 0)),
         _FixedClock(5000),
-        boards: Stream.value(
+        boards: _broadcast(
           board(9, [
             ('a-1', 900),
             ('b-2', 800),
@@ -394,7 +402,7 @@ void main() {
         tester,
         Stream.value(_round(openSlot: -1, now: 0)),
         _FixedClock(30000),
-        boards: Stream.value(
+        boards: _broadcast(
           board(9, [
             ('a-1', 900),
             ('b-2', 800),
@@ -407,12 +415,91 @@ void main() {
       expect(find.text('d-4'), findsOneWidget);
     });
 
+    testWidgets('offers the all-time board only during the Intermission',
+        (tester) async {
+      await _pump(
+        tester,
+        Stream.value(_round(openSlot: 0, now: 0)),
+        _FixedClock(5000),
+        boards: _broadcast(board(3, [('a-1', 900)])),
+        allTime: _broadcast(const AllTimeBoard(top: [])),
+      );
+      expect(find.text('all time'), findsNothing);
+
+      await _pump(
+        tester,
+        Stream.value(_round(openSlot: -1, now: 0)),
+        _FixedClock(30000),
+        boards: _broadcast(board(3, [('a-1', 900)])),
+        allTime: _broadcast(const AllTimeBoard(top: [])),
+      );
+      expect(find.text('all time'), findsOneWidget);
+    });
+
+    testWidgets('switches to careers and back', (tester) async {
+      await _pump(
+        tester,
+        Stream.value(_round(openSlot: -1, now: 0)),
+        _FixedClock(30000),
+        boards: _broadcast(board(3, [('a-1', 900)])),
+        allTime: _broadcast(
+          const AllTimeBoard(
+            top: [
+              CareerStanding(
+                uid: 'v-1',
+                handle: 'veteran-1',
+                averageScore: 742,
+                bestRound: 1200,
+                roundsPlayed: 40,
+              ),
+            ],
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('all time'));
+      await tester.pump();
+      await tester.pump(Duration.zero);
+      await tester.pump();
+
+      expect(find.text('veteran-1'), findsOneWidget);
+      expect(find.text('742'), findsOneWidget);
+      expect(find.text('best 1200'), findsOneWidget);
+
+      await tester.tap(find.text('this round'));
+      await tester.pump();
+      await tester.pump(Duration.zero);
+      await tester.pump();
+      expect(find.text('a-1'), findsOneWidget);
+    });
+
+    testWidgets('says so when nobody has qualified all-time yet',
+        (tester) async {
+      await _pump(
+        tester,
+        Stream.value(_round(openSlot: -1, now: 0)),
+        _FixedClock(30000),
+        boards: _broadcast(board(3, [('a-1', 900)])),
+        allTime: _broadcast(const AllTimeBoard(top: [])),
+      );
+
+      await tester.tap(find.text('all time'));
+      await tester.pump();
+      await tester.pump(Duration.zero);
+      await tester.pump();
+
+      expect(
+        find.textContaining('Nobody has finished enough rounds'),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('picks this Player out of the standings', (tester) async {
       await _pump(
         tester,
         Stream.value(_round(openSlot: 0, now: 0)),
         _FixedClock(5000),
-        boards: Stream.value(board(2, [('alpha-1', 900), ('me-2', 700)])),
+        boards: _broadcast(board(2, [('alpha-1', 900), ('me-2', 700)])),
         uid: 'me-2',
       );
 
