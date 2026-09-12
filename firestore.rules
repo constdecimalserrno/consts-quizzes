@@ -30,6 +30,17 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // A Player's own seat, so the client can tell whether it holds one.
+    match /rounds/{roundId}/seatHolders/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    match /rounds/{roundId}/meta/{doc} {
+      allow read: if true;
+      allow write: if false;
+    }
+
     // Answers. This block is the whole of the pacing guarantee.
     //
     // A Player cannot answer ahead, cannot answer late, and cannot answer
@@ -43,8 +54,21 @@ service cloud.firestore {
       function slot() {
         return live().slots[request.resource.data.slot];
       }
+      // Absence means open, at every level: no config document, no field, or a
+      // field of the wrong type all leave the game running. A missing document
+      // must never be able to take the broadcast down.
+      function gameOpen() {
+        return !exists(/databases/$(database)/documents/config/app)
+          || get(/databases/$(database)/documents/config/app)
+               .data.get('killSwitch', false) != true;
+      }
 
       allow create: if request.auth != null
+        // A seat, taken at join, is what bounds the bill. Without this line the
+        // cap would be advisory: anyone could keep answering without holding
+        // one, and the guard that is supposed to act in real time would not.
+        && exists(/databases/$(database)/documents/rounds/$(roundId)/seatHolders/$(request.auth.uid))
+        && gameOpen()
         // One Answer per Player per Slot, by construction: the document id is
         // the only one this Player is allowed to write for this Slot, and
         // `create` refuses an id that already exists.

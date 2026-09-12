@@ -50,6 +50,25 @@ async function publishRound({
       slots,
       nextRoundAt: closesAt + 60_000,
     })
+    // Everyone in these tests holds a seat unless a test takes it away.
+    for (const uid of ['alice', 'bob']) {
+      await setDoc(doc(ctx.firestore(), `rounds/${ROUND}/seatHolders/${uid}`), {
+        at: Timestamp.now(),
+      })
+    }
+  })
+}
+
+async function setKillSwitch(on: boolean) {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'config/app'), { killSwitch: on })
+  })
+}
+
+async function revokeSeat(uid: string) {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const { deleteDoc } = await import('firebase/firestore')
+    await deleteDoc(doc(ctx.firestore(), `rounds/${ROUND}/seatHolders/${uid}`))
   })
 }
 
@@ -145,6 +164,23 @@ describe('answer rules', () => {
     await assertFails(
       setDoc(doc(db, `rounds/${ROUND}/answers/${SLOT}_alice`), answer('alice')),
     )
+  })
+
+  it('refuses an Answer from a Player holding no seat', async () => {
+    await revokeSeat('alice')
+    const db = env.authenticatedContext('alice').firestore()
+    await assertFails(
+      setDoc(doc(db, `rounds/${ROUND}/answers/${SLOT}_alice`), answer('alice')),
+    )
+  })
+
+  it('refuses every Answer while the kill switch is on', async () => {
+    await setKillSwitch(true)
+    const db = env.authenticatedContext('alice').firestore()
+    await assertFails(
+      setDoc(doc(db, `rounds/${ROUND}/answers/${SLOT}_alice`), answer('alice')),
+    )
+    await setKillSwitch(false)
   })
 
   it('refuses an Answer against a Round that is not live', async () => {

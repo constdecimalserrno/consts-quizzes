@@ -21,6 +21,7 @@ class RoundView extends StatefulWidget {
     this.sink,
     this.boards,
     this.uid,
+    this.refusal,
   });
 
   final Stream<LiveRound?> rounds;
@@ -34,6 +35,9 @@ class RoundView extends StatefulWidget {
 
   /// Used only to pick this Player out of the standings.
   final String? uid;
+
+  /// Why this visitor cannot answer: 'full', 'closed', or absent if they can.
+  final String? refusal;
 
   @override
   State<RoundView> createState() => _RoundViewState();
@@ -119,6 +123,7 @@ class _RoundViewState extends State<RoundView> {
                           : (choice) => _answer(round, choice),
                       boards: widget.boards,
                       uid: widget.uid,
+                      refusal: widget.refusal,
                     );
                   },
                 ),
@@ -149,6 +154,7 @@ class _Broadcast extends StatelessWidget {
     required this.onPick,
     required this.boards,
     required this.uid,
+    required this.refusal,
   });
 
   final LiveRound round;
@@ -159,6 +165,7 @@ class _Broadcast extends StatelessWidget {
   final void Function(String choice)? onPick;
   final Stream<LiveBoard>? boards;
   final String? uid;
+  final String? refusal;
 
   @override
   Widget build(BuildContext context) {
@@ -173,6 +180,7 @@ class _Broadcast extends StatelessWidget {
               _Marquee(handle: handle),
               const SizedBox(height: 14),
               _ThemeStrip(round: round),
+              if (refusal != null) _Refused(reason: refusal!),
               const SizedBox(height: 8),
               Expanded(
                 child: round.inIntermission
@@ -627,5 +635,35 @@ class _Board extends StatelessWidget {
             ),
           );
         },
+      );
+}
+
+
+/// Why this visitor is watching rather than playing.
+///
+/// A refused seat is not an error and should not read as one: the broadcast is
+/// still there, they simply are not scoring this Round.
+class _Refused extends StatelessWidget {
+  const _Refused({required this.reason});
+
+  final String reason;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: double.infinity,
+        margin: const EdgeInsets.only(top: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        decoration: BoxDecoration(
+          border: Border.all(color: Broadcast.magenta, width: 2),
+        ),
+        child: Text(
+          switch (reason) {
+            'full' => "This round is full — you're watching. "
+                'A seat opens when the next round starts.',
+            _ => "The show is on a break. You're watching; "
+                'answering is off for now.',
+          },
+          style: Broadcast.body(12, color: Broadcast.chalk),
+        ),
       );
 }

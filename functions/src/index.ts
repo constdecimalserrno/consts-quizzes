@@ -1,12 +1,18 @@
 import { getFunctions } from 'firebase-admin/functions'
 import { initializeApp } from 'firebase-admin/app'
-import { getFirestore } from 'firebase-admin/firestore'
+import { FieldValue, getFirestore } from 'firebase-admin/firestore'
+import { logger } from 'firebase-functions'
 import { setGlobalOptions } from 'firebase-functions/v2'
+import { onMessagePublished } from 'firebase-functions/v2/pubsub'
 import { HttpsError, onCall, onRequest } from 'firebase-functions/v2/https'
 import { onSchedule } from 'firebase-functions/v2/scheduler'
 import { onTaskDispatched } from 'firebase-functions/v2/tasks'
 
+import { verdict, type BudgetNotification } from './budget.js'
+import { isOpen, readConfig } from './config.js'
 import { ensurePlayer as ensurePlayerDoc } from './players.js'
+import { LIVE_ROUND } from './round.js'
+import { takeSeat } from './seats.js'
 import { tick } from './tick.js'
 
 initializeApp()
@@ -22,12 +28,53 @@ const db = () => getFirestore()
 export const ensurePlayer = onCall(async (request) => {
   const auth = request.auth
   if (!auth) throw new HttpsError('unauthenticated', 'Sign in first.')
+
   const handle = await ensurePlayerDoc(
     { db: db() },
     auth.uid,
     auth.token.firebase?.sign_in_provider === 'anonymous',
   )
-  return { handle }
+
+  // A seat is per Round, so this is also where a returning Player is admitted
+  // to whatever Round is running now.
+  const [cfg, open, live] = await Promise.all([
+    readConfig(db()),
+    isOpen(db()),
+    db().doc(LIVE_ROUND).get(),
+  ])
+  const roundId = live.data()?.id as string | undefined
+  const seat = roundId
+    ? await takeSeat(
+        db(),
+        roundId,
+        auth.uid,
+        cfg.maxConcurrentPlayers,
+        open,
+      )
+    : { seated: false as const, reason: 'closed' as const, taken: 0 }
+
+  return { handle, seated: seat.seated, reason: seat.seated ? null : seat.reason }
+})
+
+/**
+ * Receives Cloud Billing's budget notifications over Pub/Sub.
+ *
+ * See `budget.ts` for why this is the slow half of the defence.
+ */
+export const budgetWatch = onMessagePublished('budget-alerts', async (event) => {
+  const msg = (event.data.message.json ?? {}) as BudgetNotification
+  const call = verdict(msg)
+  if (call === 'ok') return
+
+  await db().doc('config/app').set(
+    {
+      killSwitch: true,
+      killedAt: FieldValue.serverTimestamp(),
+      killedBecause: `spend ${msg.costAmount} of ${msg.budgetAmount}`,
+    },
+    { merge: true },
+  )
+  logger.error('budget threshold crossed', { verdict: call, ...msg })
 })
 
 /**

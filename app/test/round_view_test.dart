@@ -62,6 +62,7 @@ Future<void> _pump(
   AnswerSink? sink,
   Stream<LiveBoard>? boards,
   String? uid,
+  String? refusal,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -72,6 +73,7 @@ Future<void> _pump(
         sink: sink,
         boards: boards,
         uid: uid,
+        refusal: refusal,
       ),
     ),
   );
@@ -417,6 +419,43 @@ void main() {
       final me = tester.widget<Text>(find.text('me-2'));
       final them = tester.widget<Text>(find.text('alpha-1'));
       expect(me.style!.color, isNot(them.style!.color));
+    });
+  });
+
+  group('seats', () {
+    testWidgets('says why a visitor is only watching when the Round is full',
+        (tester) async {
+      await _pump(
+        tester,
+        Stream.value(_round(openSlot: 0, now: 0)),
+        _FixedClock(5000),
+        refusal: 'full',
+      );
+
+      expect(find.textContaining('This round is full'), findsOneWidget);
+    });
+
+    testWidgets('says the show is on a break when the game is closed',
+        (tester) async {
+      await _pump(
+        tester,
+        Stream.value(_round(openSlot: 0, now: 0)),
+        _FixedClock(5000),
+        refusal: 'closed',
+      );
+
+      expect(find.textContaining('on a break'), findsOneWidget);
+    });
+
+    testWidgets('says nothing to a visitor who holds a seat', (tester) async {
+      await _pump(
+        tester,
+        Stream.value(_round(openSlot: 0, now: 0)),
+        _FixedClock(5000),
+      );
+
+      expect(find.textContaining('This round is full'), findsNothing);
+      expect(find.textContaining('on a break'), findsNothing);
     });
   });
 

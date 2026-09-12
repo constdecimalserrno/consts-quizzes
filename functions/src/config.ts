@@ -25,6 +25,15 @@ export type AppConfig = {
   maxPoints: number
   /** Floor for a correct Answer, however slow. */
   minPoints: number
+  /**
+   * How many Players may hold a seat in a Round at once.
+   *
+   * This is the budget. Spend is dominated by per-Player-per-Slot reads and
+   * writes, which scale linearly with Players, and billing alerts arrive six
+   * to twenty-four hours late — so the only guard that acts in time is the one
+   * on the way in. Changing this is a spending decision, not a config tweak.
+   */
+  maxConcurrentPlayers: number
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -34,10 +43,24 @@ export const DEFAULT_CONFIG: AppConfig = {
   intermissionSeconds: 60,
   maxPoints: 1000,
   minPoints: 100,
+  maxConcurrentPlayers: 120,
 }
 
 const positive = (v: unknown, fallback: number): number =>
   typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : fallback
+
+/**
+ * Whether the game is open for business.
+ *
+ * Flipped by the budget watcher when spend crosses the soft threshold. Read
+ * separately from the rest of the config because it is the one field a client
+ * needs before it does anything else.
+ */
+export async function isOpen(db: Firestore): Promise<boolean> {
+  const snap = await db.doc('config/app').get()
+  // Absence means open: a missing document must not take the game down.
+  return snap.data()?.killSwitch !== true
+}
 
 export async function readConfig(db: Firestore): Promise<AppConfig> {
   const snap = await db.doc('config/app').get()
@@ -52,6 +75,7 @@ export async function readConfig(db: Firestore): Promise<AppConfig> {
     intermissionSeconds: n('intermissionSeconds'),
     maxPoints: n('maxPoints'),
     minPoints: n('minPoints'),
+    maxConcurrentPlayers: n('maxConcurrentPlayers'),
   }
 
   // A read phase at least as long as the Slot would leave no Window at all, so

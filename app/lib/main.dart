@@ -26,17 +26,28 @@ Future<void> main() async {
 ///
 /// Sign-in and `ensurePlayer` are both idempotent: a returning visitor keeps
 /// the uid the SDK persisted and the Handle minted the first time.
-Future<({String handle, ServerClock clock, String uid})> _tuneIn() async {
+typedef TunedIn = ({
+  String handle,
+  ServerClock clock,
+  String uid,
+  bool seated,
+  String? refusal,
+});
+
+Future<TunedIn> _tuneIn() async {
   final auth = FirebaseAuth.instance;
   if (auth.currentUser == null) await auth.signInAnonymously();
 
   final clock = await ServerClock.sync(_serverTime);
   final result =
       await FirebaseFunctions.instance.httpsCallable('ensurePlayer').call();
+  final data = result.data as Map;
   return (
-    handle: (result.data as Map)['handle'] as String,
+    handle: data['handle'] as String,
     clock: clock,
     uid: auth.currentUser!.uid,
+    seated: data['seated'] as bool? ?? false,
+    refusal: data['reason'] as String?,
   );
 }
 
@@ -74,12 +85,10 @@ class _TuneIn extends StatefulWidget {
 }
 
 class _TuneInState extends State<_TuneIn> {
-  late final Future<({String handle, ServerClock clock, String uid})> _ready =
-      _tuneIn();
+  late final Future<TunedIn> _ready = _tuneIn();
 
   @override
-  Widget build(BuildContext context) =>
-      FutureBuilder<({String handle, ServerClock clock, String uid})>(
+  Widget build(BuildContext context) => FutureBuilder<TunedIn>(
         future: _ready,
         builder: (context, snap) {
           if (snap.hasError) {
@@ -104,14 +113,16 @@ class _TuneInState extends State<_TuneIn> {
             rounds: _liveRounds(),
             clock: ready?.clock ?? ServerClock(),
             handle: ready?.handle,
-            // Absent until sign-in lands, so the podiums are inert rather than
-            // accepting taps that would be refused.
-            sink: ready == null
+            // Absent until sign-in lands, and absent for a visitor with no
+            // seat: podiums stay inert rather than accepting taps the rules
+            // would refuse anyway.
+            sink: ready == null || !ready.seated
                 ? null
                 : FirestoreAnswerSink(
                     db: FirebaseFirestore.instance,
                     uid: ready.uid,
                   ),
+            refusal: ready?.refusal,
             boards: _liveBoard(),
             uid: ready?.uid,
           );
