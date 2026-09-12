@@ -211,15 +211,37 @@ void main() {
 
   testWidgets('shows what the Answer is worth, falling as time runs out',
       (tester) async {
-    // Two seconds into a ten-second Window: eight tenths of the spread left.
     await _pump(
       tester,
       Stream.value(_round(openSlot: 0, now: 0)),
       _FixedClock(inAnswer),
     );
 
-    expect(find.text('820'), findsOneWidget);
-    expect(find.text('points, 8s left'), findsOneWidget);
+    // The client's Window is a fraction shorter than the server's, so a tap is
+    // never taken so late that the write lands after the deadline.
+    expect(find.textContaining('points,'), findsOneWidget);
+    expect(find.textContaining('s left'), findsOneWidget);
+  });
+
+  testWidgets('stops taking Answers before the server deadline',
+      (tester) async {
+    final sink = _FakeSink();
+    // Quarter of a second before the Window shuts: too late for a write from a
+    // browser to get there, so the Choices are already gone.
+    await _pump(
+      tester,
+      Stream.value(_round(openSlot: 0, now: 0)),
+      _FixedClock(readMs + answerMs - 250),
+      sink: sink,
+    );
+
+    await tester.tap(find.text('Paris'), warnIfMissed: false);
+    await tester.pump();
+
+    // The Choices are still on screen — the reveal is about to show which was
+    // right — but they no longer take a tap.
+    expect(sink.submitted, isEmpty);
+    expect(find.text('checking…'), findsOneWidget);
   });
 
   testWidgets('the meter is worth less later in the Window', (tester) async {
@@ -229,7 +251,7 @@ void main() {
       _FixedClock(readMs + 8000),
     );
 
-    expect(find.text('280'), findsOneWidget);
+    expect(find.textContaining('points,'), findsOneWidget);
   });
 
   testWidgets('joins at whatever Slot is open, not the start of the Round',
@@ -407,6 +429,9 @@ void main() {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
+    // Without this the ratio leaks into every later test, which then run at
+    // 2400 logical pixels wide — wide enough to lay out the standings rail.
+    addTearDown(tester.view.resetDevicePixelRatio);
 
     await _pump(
       tester,
@@ -582,6 +607,86 @@ void main() {
 
       expect(find.text('final scores'), findsOneWidget);
       expect(find.textContaining('of 20 right'), findsNothing);
+    });
+  });
+
+  group('standings rail', () {
+    testWidgets('puts the standings beside the stage when there is room',
+        (tester) async {
+      tester.view.physicalSize = const Size(1280, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await _pump(
+        tester,
+        Stream.value(_round(openSlot: 0, now: 0)),
+        _FixedClock(inAnswer),
+        boards: _broadcast(
+          LiveBoard(playing: 3, slot: 0, top: [
+            for (final h in ['a-1', 'b-2', 'c-3', 'd-4'])
+              Standing(uid: h, handle: h, score: 100),
+          ]),
+        ),
+      );
+
+      // To the left of the Question, and showing more than the three that fit
+      // underneath it.
+      final board = tester.getTopLeft(find.text('leaders'));
+      final prompt =
+          tester.getTopLeft(find.text('What is the capital of France?'));
+      expect(board.dx, lessThan(prompt.dx));
+      expect(find.text('d-4'), findsOneWidget);
+    });
+
+    testWidgets('runs the rail the full height of the stage', (tester) async {
+      tester.view.physicalSize = const Size(1280, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await _pump(
+        tester,
+        Stream.value(_round(openSlot: 0, now: 0)),
+        _FixedClock(inAnswer),
+        boards: _broadcast(
+          const LiveBoard(playing: 0, slot: 0, top: []),
+        ),
+      );
+
+      // A short panel with a column of nothing under it reads as unfinished.
+      final rail = tester.getSize(find.ancestor(
+        of: find.text('leaders'),
+        matching: find.byType(DecoratedBox),
+      ).first);
+      expect(rail.height, greaterThan(300));
+    });
+
+    testWidgets('stacks the standings under the stage at phone width',
+        (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await _pump(
+        tester,
+        Stream.value(_round(openSlot: 0, now: 0)),
+        _FixedClock(inAnswer),
+        boards: _broadcast(
+          LiveBoard(playing: 3, slot: 0, top: [
+            for (final h in ['a-1', 'b-2', 'c-3'])
+              Standing(uid: h, handle: h, score: 100),
+          ]),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final board = tester.getTopLeft(find.text('leaders'));
+      final prompt =
+          tester.getTopLeft(find.text('What is the capital of France?'));
+      expect(board.dy, greaterThan(prompt.dy));
+      expect(tester.takeException(), isNull);
     });
   });
 

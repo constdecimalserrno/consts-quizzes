@@ -241,51 +241,101 @@ class _Broadcast extends StatelessWidget {
     final q = round.question;
     // The whole broadcast is one block, centred on the set. Letting the stage
     // expand to fill the window left a few hundred pixels of nothing between
-    // the theme strip and the question on an ordinary desktop, and marooned
-    // the standings at the bottom edge.
-    return Center(
-      child: SingleChildScrollView(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: Broadcast.wide),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _Marquee(handle: handle),
-                const SizedBox(height: 14),
-                _ThemeStrip(round: round),
-                if (refusal != null) _Refused(reason: refusal!),
-                round.inIntermission
-                    ? _Intermission(
-                        round: round,
-                        clock: clock,
-                        mine: mine,
-                        slots: round.slotCount,
+    // the theme strip and the question on an ordinary desktop.
+    return LayoutBuilder(
+      builder: (context, box) {
+        final hasRail =
+            boards != null && box.maxWidth >= Broadcast.railBreakpoint;
+
+        final board = boards == null
+            ? null
+            : _Board(
+                live: live,
+                allTime: allTime,
+                bots: bots,
+                uid: uid,
+                // In the rail there is room for the whole board all the time;
+                // stacked under the stage there is only room for the top few
+                // until a Round ends.
+                compact: !hasRail && !round.inIntermission,
+                savePrompt: round.inIntermission ? savePrompt : null,
+                fill: hasRail,
+              );
+
+        // Below this the podiums stack four deep and the stage is taller than
+        // any fixed box worth setting; it scrolls instead.
+        final narrow = box.maxWidth < 560;
+
+        final stage = ConstrainedBox(
+          constraints: BoxConstraints(
+            minHeight: narrow ? 0 : Broadcast.stageBox,
+          ),
+          child: round.inIntermission
+              ? _Intermission(
+                  round: round,
+                  clock: clock,
+                  mine: mine,
+                  slots: round.slotCount,
+                )
+              : _Stage(
+                  question: q!,
+                  clock: clock,
+                  picked: picked,
+                  state: state,
+                  onPick: onPick,
+                  points: points,
+                  isLastSlot: q.slot >= round.slotCount - 1,
+                ),
+        );
+
+        // Above centre rather than dead centre: the podiums are the thing you
+        // reach for, and they should not sit at the bottom of the window.
+        return Align(
+          alignment: const Alignment(0, -0.35),
+          child: SingleChildScrollView(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: hasRail ? Broadcast.wideWithRail : Broadcast.wide,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 18,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _Marquee(handle: handle),
+                    const SizedBox(height: 14),
+                    // The Theme strip spans both columns: it belongs to the
+                    // broadcast, not to the stage.
+                    _ThemeStrip(round: round),
+                    if (refusal != null) _Refused(reason: refusal!),
+                    if (hasRail)
+                      // Both columns get the stage's height, so they read as
+                      // one set rather than a panel parked beside it.
+                      SizedBox(
+                        height: Broadcast.stageBox,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            SizedBox(width: Broadcast.rail, child: board),
+                            const SizedBox(width: 18),
+                            Expanded(child: stage),
+                          ],
+                        ),
                       )
-                    : _Stage(
-                        question: q!,
-                        clock: clock,
-                        picked: picked,
-                        state: state,
-                        onPick: onPick,
-                        points: points,
-                        isLastSlot: q.slot >= round.slotCount - 1,
-                      ),
-                if (boards != null)
-                  _Board(
-                    live: live,
-                    allTime: allTime,
-                    bots: bots,
-                    uid: uid,
-                    compact: !round.inIntermission,
-                    savePrompt: round.inIntermission ? savePrompt : null,
-                  ),
-              ],
+                    else ...[
+                      stage,
+                      ?board,
+                    ],
+                  ],
+                ),
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -457,20 +507,36 @@ class _Stage extends StatelessWidget {
           children: [
             const SizedBox(height: 10),
             // A prompt is read fastest at roughly 40 characters a line; the
-            // full 720 of the stage runs long enough that the eye loses the
+            // full width of the stage runs long enough that the eye loses the
             // start of the next line.
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 580),
-              child: Text(
-                question.prompt,
-                textAlign: TextAlign.center,
-                style: Broadcast.body(
-                  narrow ? 20 : 25,
-                  weight: FontWeight.w700,
+            //
+            // The box is a fixed height because Questions are one, two or three
+            // lines and everything below would otherwise sit somewhere
+            // different for every Question. A very long one scales down inside
+            // it rather than pushing the podiums about.
+            SizedBox(
+              height: Broadcast.promptBox,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 580),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 580),
+                      child: Text(
+                        question.prompt,
+                        textAlign: TextAlign.center,
+                        style: Broadcast.body(
+                          narrow ? 20 : 25,
+                          weight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
-            const SizedBox(height: 22),
+            const SizedBox(height: 6),
             _PhaseBar(
               question: question,
               phase: phase,
@@ -478,7 +544,7 @@ class _Stage extends StatelessWidget {
               points: points,
               isLastSlot: isLastSlot,
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 10),
             // Choices stay hidden while the prompt is being read. Showing them
             // greyed out just means everyone reads them anyway and the read
             // phase becomes a stare. The podiums are still drawn, empty, so
@@ -521,7 +587,7 @@ class _PhaseBar extends StatelessWidget {
   /// Fixed, because a counter and the points meter are not the same height and
   /// the difference would nudge the whole page every time a Slot changed
   /// phase — four times a Question.
-  static const height = 88.0;
+  static const height = Broadcast.phaseBox;
 
   @override
   Widget build(BuildContext context) => SizedBox(
@@ -604,7 +670,10 @@ class _PointsMeter extends StatelessWidget {
   Widget build(BuildContext context) {
     final left = question.remainingAt(now);
     final worth = (points.min + (points.max - points.min) * left).round();
-    final seconds = ((question.closesAt - now) / 1000).ceil().clamp(0, 999);
+    final seconds = ((question.clientClosesAt - now) / 1000).ceil().clamp(
+      0,
+      999,
+    );
 
     // Warm as it empties, exactly as the terminal version did.
     final colour = left > 0.66
@@ -983,6 +1052,7 @@ class _Board extends StatefulWidget {
     required this.uid,
     required this.compact,
     required this.savePrompt,
+    this.fill = false,
   });
 
   final LiveBoard live;
@@ -991,6 +1061,10 @@ class _Board extends StatefulWidget {
   final String? uid;
   final bool compact;
   final Widget Function(int score)? savePrompt;
+
+  /// In the rail, run the full height of the stage rather than shrinking to
+  /// the handful of names on it.
+  final bool fill;
 
   @override
   State<_Board> createState() => _BoardState();
@@ -1034,7 +1108,7 @@ class _BoardState extends State<_Board> {
     // The other boards are only worth the room when a Round is not using it.
     final canSwitch = widget.allTime != null && !widget.compact;
     if (canSwitch && _view != 0) {
-      return _AllTimePanel(
+      final other = _AllTimePanel(
         careers: _view == 1 ? _careers : _botBoard,
         uid: widget.uid,
         title: _view == 1
@@ -1047,18 +1121,20 @@ class _BoardState extends State<_Board> {
         onNext: () => setState(() => _view = _view == 1 ? 2 : 0),
         onBack: () => setState(() => _view = 0),
       );
+      return widget.fill ? Column(children: [Expanded(child: other)]) : other;
     }
     final mine = widget.live.top.where((s) => s.uid == widget.uid).firstOrNull;
     final prompt = widget.savePrompt;
+    final panel = _RoundPanel(
+      board: widget.live,
+      uid: widget.uid,
+      compact: widget.compact,
+      onAllTime: canSwitch ? () => setState(() => _view = 1) : null,
+    );
     return Column(
-      mainAxisSize: MainAxisSize.min,
+      mainAxisSize: widget.fill ? MainAxisSize.max : MainAxisSize.min,
       children: [
-        _RoundPanel(
-          board: widget.live,
-          uid: widget.uid,
-          compact: widget.compact,
-          onAllTime: canSwitch ? () => setState(() => _view = 1) : null,
-        ),
+        widget.fill ? Expanded(child: panel) : panel,
         // Only worth asking somebody who actually scored something.
         if (prompt != null && mine != null && mine.score > 0)
           prompt(mine.score),
@@ -1082,18 +1158,13 @@ class _RoundPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (board.top.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.only(top: 10),
-        child: Text(
-          board.playing == 0
-              ? 'nobody has answered yet'
-              : '${board.playing} playing',
-          style: Broadcast.body(12, color: Broadcast.chalkDim),
-        ),
-      );
-    }
-    final shown = compact ? board.top.take(3).toList() : board.top;
+    // The panel is drawn whether or not anyone has scored. An empty board used
+    // to collapse to a bare line of grey text, which in the rail read as a
+    // stray caption rather than the standings waiting to fill up.
+    // Three fits under the stage; the rail has room for a real list.
+    final shown = compact
+        ? board.top.take(3).toList()
+        : board.top.take(12).toList();
     return Container(
       margin: const EdgeInsets.only(top: 10),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -1103,6 +1174,8 @@ class _RoundPanel extends StatelessWidget {
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisAlignment: MainAxisAlignment.start,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1123,6 +1196,14 @@ class _RoundPanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 6),
+          if (shown.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Text(
+                'nobody has answered yet',
+                style: Broadcast.body(12, color: Broadcast.chalkDim),
+              ),
+            ),
           for (final (i, s) in shown.indexed)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 2),

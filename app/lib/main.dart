@@ -39,6 +39,8 @@ Future<TunedIn> _tuneIn() async {
   if (auth.currentUser == null) await auth.signInAnonymously();
 
   final clock = await ServerClock.sync(_serverTime);
+  // Left running for the life of the page: see `keepSynced`.
+  clock.keepSynced(_serverTime);
   final result =
       await FirebaseFunctions.instance.httpsCallable('ensurePlayer').call();
   final data = result.data as Map;
