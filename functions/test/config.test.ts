@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 
-import { DEFAULT_CONFIG, readConfig } from '../src/config.js'
+import { DEFAULT_CONFIG, readConfig, slotMillis } from '../src/config.js'
 import { testDb, wipe } from './harness.js'
 
 const { db, dispose } = testDb()
@@ -24,21 +24,35 @@ describe('readConfig', () => {
     const cfg = await readConfig(db)
     expect(cfg.slotsPerRound).toBe(5)
     expect(cfg.intermissionSeconds).toBe(10)
-    expect(cfg.slotSeconds).toBe(DEFAULT_CONFIG.slotSeconds)
+    expect(cfg.answerSeconds).toBe(DEFAULT_CONFIG.answerSeconds)
   })
 
   it('treats a wrong type as absent rather than trusting it', async () => {
-    await db.doc('config/app').set({ slotsPerRound: '5', slotSeconds: -3 })
+    await db.doc('config/app').set({ slotsPerRound: '5', answerSeconds: -3 })
 
     const cfg = await readConfig(db)
     expect(cfg.slotsPerRound).toBe(DEFAULT_CONFIG.slotsPerRound)
-    expect(cfg.slotSeconds).toBe(DEFAULT_CONFIG.slotSeconds)
+    expect(cfg.answerSeconds).toBe(DEFAULT_CONFIG.answerSeconds)
   })
 
-  it('refuses a read phase that would leave no Window', async () => {
-    await db.doc('config/app').set({ slotSeconds: 5, readSeconds: 9 })
+  it('reads each of the four phases independently', async () => {
+    await db.doc('config/app').set({ readSeconds: 5, revealSeconds: 6 })
 
     const cfg = await readConfig(db)
-    expect(cfg.readSeconds).toBeLessThan(cfg.slotSeconds)
+    expect(cfg.readSeconds).toBe(5)
+    expect(cfg.revealSeconds).toBe(6)
+    expect(cfg.answerSeconds).toBe(DEFAULT_CONFIG.answerSeconds)
+    expect(cfg.transitionSeconds).toBe(DEFAULT_CONFIG.transitionSeconds)
+  })
+
+  it('adds the four phases up into a Slot', async () => {
+    await db.doc('config/app').set({
+      readSeconds: 3,
+      answerSeconds: 10,
+      revealSeconds: 4,
+      transitionSeconds: 2,
+    })
+
+    expect(slotMillis(await readConfig(db))).toBe(19_000)
   })
 })
