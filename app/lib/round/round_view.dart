@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/broadcast.dart';
 import 'answering.dart';
+import 'leaderboard.dart';
 import 'round.dart';
 import 'server_clock.dart';
 
@@ -18,6 +19,8 @@ class RoundView extends StatefulWidget {
     required this.clock,
     this.handle,
     this.sink,
+    this.boards,
+    this.uid,
   });
 
   final Stream<LiveRound?> rounds;
@@ -26,6 +29,11 @@ class RoundView extends StatefulWidget {
 
   /// Absent for a visitor who is only watching.
   final AnswerSink? sink;
+
+  final Stream<LiveBoard>? boards;
+
+  /// Used only to pick this Player out of the standings.
+  final String? uid;
 
   @override
   State<RoundView> createState() => _RoundViewState();
@@ -109,6 +117,8 @@ class _RoundViewState extends State<RoundView> {
                       onPick: widget.sink == null
                           ? null
                           : (choice) => _answer(round, choice),
+                      boards: widget.boards,
+                      uid: widget.uid,
                     );
                   },
                 ),
@@ -137,6 +147,8 @@ class _Broadcast extends StatelessWidget {
     required this.picked,
     required this.state,
     required this.onPick,
+    required this.boards,
+    required this.uid,
   });
 
   final LiveRound round;
@@ -145,6 +157,8 @@ class _Broadcast extends StatelessWidget {
   final String? picked;
   final Answered state;
   final void Function(String choice)? onPick;
+  final Stream<LiveBoard>? boards;
+  final String? uid;
 
   @override
   Widget build(BuildContext context) {
@@ -171,6 +185,8 @@ class _Broadcast extends StatelessWidget {
                         onPick: onPick,
                       ),
               ),
+              if (boards != null)
+                _Board(boards: boards!, uid: uid, compact: !round.inIntermission),
             ],
           ),
         ),
@@ -515,4 +531,85 @@ class _Intermission extends StatelessWidget {
       ),
     );
   }
+}
+
+
+/// The standings, as a ticker under the stage during a Round and opened out
+/// during the Intermission, when there is nothing else to look at.
+class _Board extends StatelessWidget {
+  const _Board({required this.boards, required this.uid, required this.compact});
+
+  final Stream<LiveBoard> boards;
+  final String? uid;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) => StreamBuilder<LiveBoard>(
+        stream: boards,
+        builder: (context, snap) {
+          final board = snap.data ?? LiveBoard.empty;
+          if (board.top.isEmpty) {
+            return Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Text(
+                board.playing == 0
+                    ? 'nobody has answered yet'
+                    : '${board.playing} playing',
+                style: Broadcast.body(12, color: Broadcast.chalkDim),
+              ),
+            );
+          }
+          final shown = compact ? board.top.take(3).toList() : board.top;
+          return Container(
+            margin: const EdgeInsets.only(top: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: Broadcast.setDeep.withValues(alpha: 0.55),
+              border: Border.all(color: Broadcast.podiumEdge, width: 2),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('leaders', style: Broadcast.body(12, color: Broadcast.gold)),
+                    Text('${board.playing} playing',
+                        style: Broadcast.body(12, color: Broadcast.chalkDim)),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                for (final (i, s) in shown.indexed)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 22,
+                          child: Text('${i + 1}',
+                              style: Broadcast.body(12,
+                                  color: Broadcast.chalkDim)),
+                        ),
+                        Expanded(
+                          child: Text(
+                            s.handle,
+                            overflow: TextOverflow.ellipsis,
+                            style: Broadcast.body(
+                              13,
+                              color: s.uid == uid
+                                  ? Broadcast.magenta
+                                  : Broadcast.chalk,
+                            ),
+                          ),
+                        ),
+                        Text('${s.score}',
+                            style: Broadcast.body(13, color: Broadcast.gold)),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          );
+        },
+      );
 }

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:consts_quizzes/round/answering.dart';
+import 'package:consts_quizzes/round/leaderboard.dart';
 import 'package:consts_quizzes/round/round.dart';
 import 'package:consts_quizzes/round/round_view.dart';
 import 'package:consts_quizzes/round/server_clock.dart';
@@ -57,6 +58,8 @@ Future<void> _pump(
   Stream<LiveRound?> rounds,
   ServerClock clock, {
   AnswerSink? sink,
+  Stream<LiveBoard>? boards,
+  String? uid,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -65,9 +68,16 @@ Future<void> _pump(
         clock: clock,
         handle: 'jolly-teal-otter-777',
         sink: sink,
+        boards: boards,
+        uid: uid,
       ),
     ),
   );
+  // The board's StreamBuilder is nested inside the Round's, so it is not built
+  // until the Round has been delivered — hence more than one frame.
+  await tester.pump(Duration.zero);
+  await tester.pump();
+  await tester.pump(Duration.zero);
   await tester.pump();
 }
 
@@ -293,6 +303,95 @@ void main() {
       await tester.pump();
 
       expect(find.text('locked in'), findsNothing);
+    });
+  });
+
+  group('leaderboard', () {
+    LiveBoard board(int playing, List<(String, int)> top) => LiveBoard(
+          playing: playing,
+          slot: 3,
+          top: [
+            for (final (h, sc) in top)
+              Standing(uid: h, handle: h, score: sc),
+          ],
+        );
+
+    testWidgets('says nobody has answered before anyone has', (tester) async {
+      await _pump(
+        tester,
+        Stream.value(_round(openSlot: 0, now: 0)),
+        _FixedClock(5000),
+        boards: Stream.value(board(0, [])),
+      );
+      expect(find.text('nobody has answered yet'), findsOneWidget);
+    });
+
+    testWidgets('names the leaders and counts everyone playing',
+        (tester) async {
+      await _pump(
+        tester,
+        Stream.value(_round(openSlot: 0, now: 0)),
+        _FixedClock(5000),
+        boards: Stream.value(
+          board(1483, [('alpha-1', 900), ('beta-2', 700), ('gamma-3', 500)]),
+        ),
+      );
+
+      expect(find.text('alpha-1'), findsOneWidget);
+      expect(find.text('900'), findsOneWidget);
+      expect(find.text('1483 playing'), findsOneWidget);
+    });
+
+    testWidgets('shows only the top few while a Slot is on screen',
+        (tester) async {
+      await _pump(
+        tester,
+        Stream.value(_round(openSlot: 0, now: 0)),
+        _FixedClock(5000),
+        boards: Stream.value(
+          board(9, [
+            ('a-1', 900),
+            ('b-2', 800),
+            ('c-3', 700),
+            ('d-4', 600),
+          ]),
+        ),
+      );
+
+      expect(find.text('c-3'), findsOneWidget);
+      expect(find.text('d-4'), findsNothing);
+    });
+
+    testWidgets('opens the full board during the Intermission', (tester) async {
+      await _pump(
+        tester,
+        Stream.value(_round(openSlot: -1, now: 0)),
+        _FixedClock(30000),
+        boards: Stream.value(
+          board(9, [
+            ('a-1', 900),
+            ('b-2', 800),
+            ('c-3', 700),
+            ('d-4', 600),
+          ]),
+        ),
+      );
+
+      expect(find.text('d-4'), findsOneWidget);
+    });
+
+    testWidgets('picks this Player out of the standings', (tester) async {
+      await _pump(
+        tester,
+        Stream.value(_round(openSlot: 0, now: 0)),
+        _FixedClock(5000),
+        boards: Stream.value(board(2, [('alpha-1', 900), ('me-2', 700)])),
+        uid: 'me-2',
+      );
+
+      final me = tester.widget<Text>(find.text('me-2'));
+      final them = tester.widget<Text>(find.text('alpha-1'));
+      expect(me.style!.color, isNot(them.style!.color));
     });
   });
 

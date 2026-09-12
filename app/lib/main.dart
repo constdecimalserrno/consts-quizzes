@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import 'firebase_options.dart';
 import 'round/answering.dart';
+import 'round/leaderboard.dart';
 import 'round/round.dart';
 import 'round/round_view.dart';
 import 'round/server_clock.dart';
@@ -43,6 +44,11 @@ Stream<LiveRound?> _liveRounds() => FirebaseFirestore.instance
     .doc('rounds/current')
     .snapshots()
     .map(LiveRound.fromSnapshot);
+
+Stream<LiveBoard> _liveBoard() => FirebaseFirestore.instance
+    .doc('leaderboards/live')
+    .snapshots()
+    .map(LiveBoard.fromSnapshot);
 
 class ConstsQuizzesApp extends StatelessWidget {
   const ConstsQuizzesApp({super.key});
@@ -106,6 +112,8 @@ class _TuneInState extends State<_TuneIn> {
                     db: FirebaseFirestore.instance,
                     uid: ready.uid,
                   ),
+            boards: _liveBoard(),
+            uid: ready?.uid,
           );
         },
       );

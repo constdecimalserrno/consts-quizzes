@@ -1,6 +1,7 @@
 import { type Firestore } from 'firebase-admin/firestore'
 
 import { scoreSlot } from './answers.js'
+import { publishLiveBoard } from './leaderboard.js'
 import { readConfig } from './config.js'
 import {
   drawSlots,
@@ -70,6 +71,7 @@ export async function tick(deps: TickDeps): Promise<TickResult> {
     // Past the last Slot but not yet time for the next Round: Intermission.
     if (round.openSlot !== -1) {
       await scoreSlot(db, round, round.openSlot, await readConfig(db))
+      await publishLiveBoard(db, round.id, round.openSlot, now)
       await db.doc(LIVE_ROUND).set(
         { openSlot: -1, question: null },
         { merge: true },
@@ -90,6 +92,7 @@ export async function tick(deps: TickDeps): Promise<TickResult> {
   // same step that opens the next one: one wake-up per Slot, not two.
   if (round.openSlot >= 0) {
     await scoreSlot(db, round, round.openSlot, await readConfig(db))
+    await publishLiveBoard(db, round.id, round.openSlot, now)
   }
 
   const plan = round.slots[current]!
