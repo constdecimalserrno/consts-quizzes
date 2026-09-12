@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../theme/broadcast.dart';
+import 'answering.dart';
 import 'round.dart';
 import 'server_clock.dart';
 
@@ -16,11 +17,15 @@ class RoundView extends StatefulWidget {
     required this.rounds,
     required this.clock,
     this.handle,
+    this.sink,
   });
 
   final Stream<LiveRound?> rounds;
   final ServerClock clock;
   final String? handle;
+
+  /// Absent for a visitor who is only watching.
+  final AnswerSink? sink;
 
   @override
   State<RoundView> createState() => _RoundViewState();
@@ -34,10 +39,45 @@ class _RoundViewState extends State<RoundView> {
     (_) => setState(() {}),
   );
 
+  /// What this Player picked, keyed by Round and Slot so that moving on always
+  /// clears it and a reconnect mid-Slot does not forget it.
+  String? _pickedKey;
+  String? _picked;
+  Answered _state = Answered.no;
+
   @override
   void initState() {
     super.initState();
     _ticker;
+  }
+
+  Future<void> _answer(LiveRound round, String choice) async {
+    final sink = widget.sink;
+    if (sink == null || _state != Answered.no) return;
+
+    setState(() {
+      _pickedKey = '${round.id}:${round.openSlot}';
+      _picked = choice;
+      _state = Answered.sending;
+    });
+    try {
+      await sink.submit(round, choice);
+      if (mounted) setState(() => _state = Answered.sent);
+    } catch (_) {
+      // The rules refused it: the Window closed under them, or they already
+      // answered from another tab. Either way the Answer did not land, and
+      // saying so is better than a podium that looks chosen but is not.
+      if (mounted) setState(() => _state = Answered.rejected);
+    }
+  }
+
+  void _resetIfNewSlot(LiveRound round) {
+    final key = '${round.id}:${round.openSlot}';
+    if (_pickedKey != key && _state != Answered.no) {
+      _pickedKey = null;
+      _picked = null;
+      _state = Answered.no;
+    }
   }
 
   @override
@@ -58,10 +98,17 @@ class _RoundViewState extends State<RoundView> {
                   stream: widget.rounds,
                   builder: (context, snap) {
                     if (!snap.hasData) return const _Standby();
+                    final round = snap.data!;
+                    _resetIfNewSlot(round);
                     return _Broadcast(
-                      round: snap.data!,
+                      round: round,
                       clock: widget.clock,
                       handle: widget.handle,
+                      picked: _picked,
+                      state: _state,
+                      onPick: widget.sink == null
+                          ? null
+                          : (choice) => _answer(round, choice),
                     );
                   },
                 ),
@@ -87,11 +134,17 @@ class _Broadcast extends StatelessWidget {
     required this.round,
     required this.clock,
     required this.handle,
+    required this.picked,
+    required this.state,
+    required this.onPick,
   });
 
   final LiveRound round;
   final ServerClock clock;
   final String? handle;
+  final String? picked;
+  final Answered state;
+  final void Function(String choice)? onPick;
 
   @override
   Widget build(BuildContext context) {
@@ -110,7 +163,13 @@ class _Broadcast extends StatelessWidget {
               Expanded(
                 child: round.inIntermission
                     ? _Intermission(round: round, clock: clock)
-                    : _Stage(question: q!, clock: clock),
+                    : _Stage(
+                        question: q!,
+                        clock: clock,
+                        picked: picked,
+                        state: state,
+                        onPick: onPick,
+                      ),
               ),
             ],
           ),
@@ -207,10 +266,19 @@ class _ThemeStrip extends StatelessWidget {
 
 /// Question, clock, podiums.
 class _Stage extends StatelessWidget {
-  const _Stage({required this.question, required this.clock});
+  const _Stage({
+    required this.question,
+    required this.clock,
+    required this.picked,
+    required this.state,
+    required this.onPick,
+  });
 
   final OpenQuestion question;
   final ServerClock clock;
+  final String? picked;
+  final Answered state;
+  final void Function(String choice)? onPick;
 
   @override
   Widget build(BuildContext context) {
@@ -239,7 +307,14 @@ class _Stage extends StatelessWidget {
             const SizedBox(height: 14),
             _Clock(seconds: remaining, locked: locked),
             const SizedBox(height: 16),
-            _Podiums(choices: question.choices, narrow: narrow, locked: locked),
+            _Podiums(
+              choices: question.choices,
+              narrow: narrow,
+              locked: locked,
+              picked: picked,
+              state: state,
+              onPick: onPick,
+            ),
             const SizedBox(height: 10),
           ],
         );
@@ -284,17 +359,32 @@ class _Podiums extends StatelessWidget {
     required this.choices,
     required this.narrow,
     required this.locked,
+    required this.picked,
+    required this.state,
+    required this.onPick,
   });
 
   final List<String> choices;
   final bool narrow;
   final bool locked;
+  final String? picked;
+  final Answered state;
+  final void Function(String choice)? onPick;
 
   @override
   Widget build(BuildContext context) {
     final tiles = [
       for (final (i, choice) in choices.indexed)
-        _Podium(index: i, label: choice, dimmed: locked),
+        _Podium(
+          index: i,
+          label: choice,
+          dimmed: locked,
+          chosen: picked == choice,
+          state: state,
+          onTap: locked || onPick == null || state != Answered.no
+              ? null
+              : () => onPick!(choice),
+        ),
     ];
     if (narrow) {
       return Column(
@@ -321,42 +411,82 @@ class _Podium extends StatelessWidget {
     required this.index,
     required this.label,
     required this.dimmed,
+    required this.chosen,
+    required this.state,
+    required this.onTap,
   });
 
   final int index;
   final String label;
   final bool dimmed;
+  final bool chosen;
+  final Answered state;
+  final VoidCallback? onTap;
 
   static const _keys = ['1', '2', '3', '4'];
 
+  Color get _edge {
+    if (!chosen) return Broadcast.podiumEdge;
+    return switch (state) {
+      Answered.rejected => Broadcast.magenta,
+      _ => Broadcast.gold,
+    };
+  }
+
   @override
-  Widget build(BuildContext context) => AnimatedOpacity(
-        duration: const Duration(milliseconds: 200),
-        opacity: dimmed ? 0.45 : 1,
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-          decoration: BoxDecoration(
-            color: Broadcast.podium,
-            border: Border.all(color: Broadcast.podiumEdge, width: 2),
-            boxShadow: Broadcast.bevel,
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 26,
-                height: 26,
-                alignment: Alignment.center,
-                decoration: const BoxDecoration(color: Broadcast.gold),
-                child: Text(
-                  _keys[index],
-                  style: Broadcast.body(13,
-                      color: Broadcast.setDeep, weight: FontWeight.w800),
+  Widget build(BuildContext context) => Semantics(
+        button: onTap != null,
+        selected: chosen,
+        label: label,
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 200),
+          opacity: dimmed ? 0.45 : 1,
+          child: Material(
+            color: chosen ? Broadcast.setNavy : Broadcast.podium,
+            child: InkWell(
+              onTap: onTap,
+              child: Container(
+                width: double.infinity,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                decoration: BoxDecoration(
+                  border: Border.all(color: _edge, width: chosen ? 3 : 2),
+                  boxShadow: Broadcast.bevel,
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 26,
+                      height: 26,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: chosen ? Broadcast.magenta : Broadcast.gold,
+                      ),
+                      child: Text(
+                        _keys[index],
+                        style: Broadcast.body(13,
+                            color: Broadcast.setDeep, weight: FontWeight.w800),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(child: Text(label, style: Broadcast.body(15))),
+                    if (chosen)
+                      Text(
+                        switch (state) {
+                          Answered.sending => 'sending',
+                          Answered.sent => 'locked in',
+                          Answered.rejected => 'too late',
+                          Answered.no => '',
+                        },
+                        style: Broadcast.body(11,
+                            color: state == Answered.rejected
+                                ? Broadcast.magenta
+                                : Broadcast.gold),
+                      ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(child: Text(label, style: Broadcast.body(15))),
-            ],
+            ),
           ),
         ),
       );

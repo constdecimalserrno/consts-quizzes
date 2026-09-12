@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:consts_quizzes/round/answering.dart';
 import 'package:consts_quizzes/round/round.dart';
 import 'package:consts_quizzes/round/round_view.dart';
 import 'package:consts_quizzes/round/server_clock.dart';
@@ -39,13 +40,33 @@ LiveRound _round({
       nextRoundAt: now + 60000,
     );
 
+/// Records what was submitted, and can be told to refuse.
+class _FakeSink implements AnswerSink {
+  final submitted = <String>[];
+  bool refuse = false;
+
+  @override
+  Future<void> submit(LiveRound round, String choice) async {
+    if (refuse) throw Exception('permission-denied');
+    submitted.add(choice);
+  }
+}
+
 Future<void> _pump(
   WidgetTester tester,
   Stream<LiveRound?> rounds,
-  ServerClock clock,
-) async {
+  ServerClock clock, {
+  AnswerSink? sink,
+}) async {
   await tester.pumpWidget(
-    MaterialApp(home: RoundView(rounds: rounds, clock: clock, handle: 'jolly-teal-otter-777')),
+    MaterialApp(
+      home: RoundView(
+        rounds: rounds,
+        clock: clock,
+        handle: 'jolly-teal-otter-777',
+        sink: sink,
+      ),
+    ),
   );
   await tester.pump();
 }
@@ -172,6 +193,107 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('Paris'), findsOneWidget);
+  });
+
+  group('answering', () {
+    testWidgets('sends the Choice that was tapped', (tester) async {
+      final sink = _FakeSink();
+      await _pump(
+        tester,
+        Stream.value(_round(openSlot: 0, now: 0)),
+        _FixedClock(5000),
+        sink: sink,
+      );
+
+      await tester.tap(find.text('Rome'));
+      await tester.pump();
+
+      expect(sink.submitted, ['Rome']);
+      expect(find.text('locked in'), findsOneWidget);
+    });
+
+    testWidgets('ignores taps during the read phase', (tester) async {
+      final sink = _FakeSink();
+      await _pump(
+        tester,
+        Stream.value(_round(openSlot: 0, now: 0)),
+        _FixedClock(1000),
+        sink: sink,
+      );
+
+      await tester.tap(find.text('Rome'), warnIfMissed: false);
+      await tester.pump();
+
+      expect(sink.submitted, isEmpty);
+    });
+
+    testWidgets('accepts only one Answer per Slot', (tester) async {
+      final sink = _FakeSink();
+      await _pump(
+        tester,
+        Stream.value(_round(openSlot: 0, now: 0)),
+        _FixedClock(5000),
+        sink: sink,
+      );
+
+      await tester.tap(find.text('Rome'));
+      await tester.pump();
+      await tester.tap(find.text('Paris'), warnIfMissed: false);
+      await tester.pump();
+
+      expect(sink.submitted, ['Rome']);
+    });
+
+    testWidgets('says so when the rules refuse the Answer', (tester) async {
+      final sink = _FakeSink()..refuse = true;
+      await _pump(
+        tester,
+        Stream.value(_round(openSlot: 0, now: 0)),
+        _FixedClock(5000),
+        sink: sink,
+      );
+
+      await tester.tap(find.text('Rome'));
+      await tester.pump();
+
+      expect(find.text('too late'), findsOneWidget);
+    });
+
+    testWidgets('clears the Answer when the next Slot opens', (tester) async {
+      final controller = StreamController<LiveRound?>();
+      addTearDown(controller.close);
+      final sink = _FakeSink();
+      await _pump(tester, controller.stream, _FixedClock(5000), sink: sink);
+
+      controller.add(_round(openSlot: 0, now: 0));
+      await tester.pump(Duration.zero);
+      await tester.pump();
+      await tester.tap(find.text('Rome'));
+      await tester.pump();
+      expect(find.text('locked in'), findsOneWidget);
+
+      controller.add(_round(openSlot: 1, now: 0));
+      await tester.pump(Duration.zero);
+      await tester.pump();
+      expect(find.text('locked in'), findsNothing);
+
+      await tester.tap(find.text('Paris'));
+      await tester.pump();
+      expect(sink.submitted, ['Rome', 'Paris']);
+    });
+
+    testWidgets('a watcher with no sink cannot answer', (tester) async {
+      await _pump(
+        tester,
+        Stream.value(_round(openSlot: 0, now: 0)),
+        _FixedClock(5000),
+      );
+
+      await tester.tap(find.text('Rome'), warnIfMissed: false);
+      await tester.pump();
+
+      expect(find.text('locked in'), findsNothing);
+    });
   });
 
   testWidgets('shows the visitor their Handle', (tester) async {

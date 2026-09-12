@@ -5,6 +5,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
 import 'firebase_options.dart';
+import 'round/answering.dart';
 import 'round/round.dart';
 import 'round/round_view.dart';
 import 'round/server_clock.dart';
@@ -24,14 +25,18 @@ Future<void> main() async {
 ///
 /// Sign-in and `ensurePlayer` are both idempotent: a returning visitor keeps
 /// the uid the SDK persisted and the Handle minted the first time.
-Future<({String handle, ServerClock clock})> _tuneIn() async {
+Future<({String handle, ServerClock clock, String uid})> _tuneIn() async {
   final auth = FirebaseAuth.instance;
   if (auth.currentUser == null) await auth.signInAnonymously();
 
   final clock = await ServerClock.sync(_serverTime);
   final result =
       await FirebaseFunctions.instance.httpsCallable('ensurePlayer').call();
-  return (handle: (result.data as Map)['handle'] as String, clock: clock);
+  return (
+    handle: (result.data as Map)['handle'] as String,
+    clock: clock,
+    uid: auth.currentUser!.uid,
+  );
 }
 
 Stream<LiveRound?> _liveRounds() => FirebaseFirestore.instance
@@ -63,11 +68,12 @@ class _TuneIn extends StatefulWidget {
 }
 
 class _TuneInState extends State<_TuneIn> {
-  late final Future<({String handle, ServerClock clock})> _ready = _tuneIn();
+  late final Future<({String handle, ServerClock clock, String uid})> _ready =
+      _tuneIn();
 
   @override
   Widget build(BuildContext context) =>
-      FutureBuilder<({String handle, ServerClock clock})>(
+      FutureBuilder<({String handle, ServerClock clock, String uid})>(
         future: _ready,
         builder: (context, snap) {
           if (snap.hasError) {
@@ -92,6 +98,14 @@ class _TuneInState extends State<_TuneIn> {
             rounds: _liveRounds(),
             clock: ready?.clock ?? ServerClock(),
             handle: ready?.handle,
+            // Absent until sign-in lands, so the podiums are inert rather than
+            // accepting taps that would be refused.
+            sink: ready == null
+                ? null
+                : FirestoreAnswerSink(
+                    db: FirebaseFirestore.instance,
+                    uid: ready.uid,
+                  ),
           );
         },
       );

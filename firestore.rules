@@ -30,6 +30,50 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Answers. This block is the whole of the pacing guarantee.
+    //
+    // A Player cannot answer ahead, cannot answer late, and cannot answer
+    // twice. None of that is enforced by hiding Questions — a client can read
+    // its own traffic, and this game permits cheating on purpose. It is
+    // enforced here, on the write, where it cannot be argued with.
+    match /rounds/{roundId}/answers/{answerId} {
+      function live() {
+        return get(/databases/$(database)/documents/rounds/current).data;
+      }
+      function slot() {
+        return live().slots[request.resource.data.slot];
+      }
+
+      allow create: if request.auth != null
+        // One Answer per Player per Slot, by construction: the document id is
+        // the only one this Player is allowed to write for this Slot, and
+        // `create` refuses an id that already exists.
+        && answerId == string(request.resource.data.slot) + '_' + request.auth.uid
+        && request.resource.data.uid == request.auth.uid
+        && roundId == live().id
+        && request.resource.data.slot is int
+        && request.resource.data.slot == live().openSlot
+        && request.resource.data.choice is string
+        // Server time, not the client's. This is what makes the elapsed time
+        // used for scoring honest rather than self-reported.
+        && request.resource.data.answeredAt == request.time
+        && request.time.toMillis() >= slot().opensAt
+        && request.time.toMillis() <= slot().closesAt;
+
+      // Never rewritten: an Answer is a record of what someone did at a moment.
+      // The server folds scores in through the Admin SDK, which these rules do
+      // not apply to.
+      allow update, delete: if false;
+      allow read: if request.auth != null && request.auth.uid == resource.data.uid;
+    }
+
+    // A Player's running total for a Round. Server-written; readable by anyone
+    // so the Leaderboard can be built from it.
+    match /rounds/{roundId}/entries/{uid} {
+      allow read: if true;
+      allow write: if false;
+    }
+
     // The Handle reservation table. Server-only both ways: a client that could
     // write here could squat a Handle, and one that could read here could turn
     // a Handle back into a uid.
