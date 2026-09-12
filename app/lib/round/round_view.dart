@@ -907,8 +907,10 @@ class _Refused extends StatelessWidget {
         ),
         child: Text(
           switch (reason) {
-            'full' => "This round is full — you're watching. "
+            'full' => "const's quizzes is at capacity — you're watching. "
                 'A seat opens when the next round starts.',
+            'busy' => 'Lots of people arriving at once. '
+                'Reload in a moment to take a seat.',
             _ => "The show is on a break. You're watching; "
                 'answering is off for now.',
           },

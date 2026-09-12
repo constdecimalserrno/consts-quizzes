@@ -9,6 +9,11 @@ afterAll(dispose)
 beforeEach(() => wipe(db))
 
 describe('readConfig', () => {
+  it('caps the Round at 99 Players unless told otherwise', async () => {
+    expect(DEFAULT_CONFIG.maxConcurrentPlayers).toBe(99)
+    expect((await readConfig(db)).maxConcurrentPlayers).toBe(99)
+  })
+
   it('falls back to defaults when the document is missing', async () => {
     expect(await readConfig(db)).toEqual(DEFAULT_CONFIG)
   })

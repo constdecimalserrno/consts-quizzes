@@ -570,7 +570,21 @@ void main() {
         refusal: 'full',
       );
 
-      expect(find.textContaining('This round is full'), findsOneWidget);
+      expect(find.textContaining('is at capacity'), findsOneWidget);
+    });
+
+    testWidgets('tells a visitor to retry when joins are contending',
+        (tester) async {
+      await _pump(
+        tester,
+        Stream.value(_round(openSlot: 0, now: 0)),
+        _FixedClock(5000),
+        refusal: 'busy',
+      );
+
+      // Not "full": there is room, they just collided with everyone else.
+      expect(find.textContaining('Reload in a moment'), findsOneWidget);
+      expect(find.textContaining('at capacity'), findsNothing);
     });
 
     testWidgets('says the show is on a break when the game is closed',
@@ -592,7 +606,7 @@ void main() {
         _FixedClock(5000),
       );
 
-      expect(find.textContaining('This round is full'), findsNothing);
+      expect(find.textContaining('is at capacity'), findsNothing);
       expect(find.textContaining('on a break'), findsNothing);
     });
   });

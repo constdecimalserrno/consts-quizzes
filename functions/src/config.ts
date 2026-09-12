@@ -60,7 +60,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   intermissionSeconds: 60,
   maxPoints: 1000,
   minPoints: 100,
-  maxConcurrentPlayers: 120,
+  maxConcurrentPlayers: 99,
   minRankedRounds: 3,
   rankedJoinBySlot: 5,
   reaperDays: 90,
