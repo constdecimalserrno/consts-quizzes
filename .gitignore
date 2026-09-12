@@ -1,0 +1,17 @@
+# Flutter
+app/.dart_tool/
+app/build/
+app/build.nosync/
+app/.flutter-plugins*
+app/consts_quizzes.iml
+
+# Node
+node_modules/
+functions/lib/
+
+# Firebase
+.firebase/
+*.log
+firebase-debug.log
+firestore-debug.log
+ui-debug.log

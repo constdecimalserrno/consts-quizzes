@@ -1,0 +1,29 @@
+rules_version = '2';
+
+// Default deny. Clients read what the game publishes and, from the Answer
+// ticket onward, write Answers inside their Slot's Window. Everything else
+// goes through a callable running as the Admin SDK, which these rules do not
+// apply to.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Published runtime knobs. Deliberately readable by a signed-out visitor:
+    // the app has to know how long a Slot is before it has a uid. Never put a
+    // secret in here.
+    match /config/app {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // A Player's own document is server-written. It is readable by any signed-in
+    // Player because Handles appear on the Leaderboard.
+    match /players/{uid} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
