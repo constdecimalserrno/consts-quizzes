@@ -11,15 +11,16 @@ Future<void> main() async {
   runApp(const ConstsQuizzesApp());
 }
 
-/// Signs the visitor in anonymously, then asks the server for their Player
-/// document. Both are idempotent: a returning visitor keeps the uid the SDK
-/// has already persisted, and `ensurePlayer` is a no-op once the document is
-/// there.
+/// Signs the visitor in anonymously, then asks the server to mint or return
+/// their Handle. Both are idempotent: a returning visitor keeps the uid the
+/// SDK persisted, and `ensurePlayer` hands back the Handle it minted the first
+/// time rather than a new one.
 Future<String> _signIn() async {
   final auth = FirebaseAuth.instance;
-  final user = auth.currentUser ?? (await auth.signInAnonymously()).user!;
-  await FirebaseFunctions.instance.httpsCallable('ensurePlayer').call();
-  return user.uid;
+  if (auth.currentUser == null) await auth.signInAnonymously();
+  final result =
+      await FirebaseFunctions.instance.httpsCallable('ensurePlayer').call();
+  return (result.data as Map)['handle'] as String;
 }
 
 class ConstsQuizzesApp extends StatelessWidget {
@@ -60,7 +61,7 @@ class _ShellState extends State<_Shell> {
                       const Text("const's quizzes",
                           style: TextStyle(fontSize: 32)),
                       const SizedBox(height: 12),
-                      Text('signed in as $data'),
+                      Text('you are $data'),
                     ],
                   ),
                 _ => const CircularProgressIndicator(),

@@ -18,6 +18,10 @@ const db = () => getFirestore()
 export const ensurePlayer = onCall(async (request) => {
   const auth = request.auth
   if (!auth) throw new HttpsError('unauthenticated', 'Sign in first.')
-  await ensurePlayerDoc({ db: db() }, auth.uid, auth.token.firebase?.sign_in_provider === 'anonymous')
-  return { ok: true }
+  const handle = await ensurePlayerDoc(
+    { db: db() },
+    auth.uid,
+    auth.token.firebase?.sign_in_provider === 'anonymous',
+  )
+  return { handle }
 })

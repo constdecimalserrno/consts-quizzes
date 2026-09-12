@@ -22,6 +22,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // The Handle reservation table. Server-only both ways: a client that could
+    // write here could squat a Handle, and one that could read here could turn
+    // a Handle back into a uid.
+    match /handles/{handle} {
+      allow read, write: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

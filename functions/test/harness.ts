@@ -19,4 +19,5 @@ export function testDb(): { db: Firestore; dispose: () => Promise<void> } {
 export async function wipe(db: Firestore): Promise<void> {
   await db.recursiveDelete(db.collection('players'))
   await db.recursiveDelete(db.collection('config'))
+  await db.recursiveDelete(db.collection('handles'))
 }
