@@ -240,20 +240,24 @@ class _Broadcast extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final q = round.question;
+    // The whole broadcast is one block, centred on the set. Letting the stage
+    // expand to fill the window left a few hundred pixels of nothing between
+    // the theme strip and the question on an ordinary desktop, and marooned
+    // the standings at the bottom edge.
     return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: Broadcast.wide),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          child: Column(
-            children: [
-              _Marquee(handle: handle),
-              const SizedBox(height: 14),
-              _ThemeStrip(round: round),
-              if (refusal != null) _Refused(reason: refusal!),
-              const SizedBox(height: 8),
-              Expanded(
-                child: round.inIntermission
+      child: SingleChildScrollView(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: Broadcast.wide),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _Marquee(handle: handle),
+                const SizedBox(height: 14),
+                _ThemeStrip(round: round),
+                if (refusal != null) _Refused(reason: refusal!),
+                round.inIntermission
                     ? _Intermission(
                         round: round,
                         clock: clock,
@@ -268,17 +272,17 @@ class _Broadcast extends StatelessWidget {
                         onPick: onPick,
                         points: points,
                       ),
-              ),
-              if (boards != null)
-                _Board(
-                  live: live,
-                  allTime: allTime,
-                  bots: bots,
-                  uid: uid,
-                  compact: !round.inIntermission,
-                  savePrompt: round.inIntermission ? savePrompt : null,
-                ),
-            ],
+                if (boards != null)
+                  _Board(
+                    live: live,
+                    allTime: allTime,
+                    bots: bots,
+                    uid: uid,
+                    compact: !round.inIntermission,
+                    savePrompt: round.inIntermission ? savePrompt : null,
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -293,45 +297,72 @@ class _Marquee extends StatelessWidget {
   final String? handle;
 
   @override
-  Widget build(BuildContext context) => Row(
-        children: [
-          Expanded(
-            child: FittedBox(
-              alignment: Alignment.centerLeft,
-              fit: BoxFit.scaleDown,
-              child: Text(
-                "const's quizzes",
-                style: Broadcast.display(30).copyWith(
-                  shadows: const [
-                    Shadow(color: Broadcast.goldDeep, offset: Offset(0, 3)),
-                    Shadow(color: Broadcast.magenta, offset: Offset(2, 5)),
-                  ],
+  Widget build(BuildContext context) => LayoutBuilder(
+        builder: (context, box) {
+          final narrow = box.maxWidth < 460;
+          final title = FittedBox(
+            alignment: Alignment.centerLeft,
+            fit: BoxFit.scaleDown,
+            child: Text(
+              "const's quizzes",
+              style: Broadcast.display(narrow ? 24 : 30).copyWith(
+                shadows: const [
+                  Shadow(color: Broadcast.goldDeep, offset: Offset(0, 3)),
+                  Shadow(color: Broadcast.magenta, offset: Offset(2, 5)),
+                ],
+              ),
+            ),
+          );
+          final onAir = Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 9,
+                height: 9,
+                decoration: const BoxDecoration(
+                  color: Broadcast.magenta,
+                  shape: BoxShape.circle,
                 ),
               ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Container(
-            width: 9,
-            height: 9,
-            decoration: const BoxDecoration(
-              color: Broadcast.magenta,
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 6),
-          Text('on air', style: Broadcast.body(12, color: Broadcast.chalkDim)),
-          if (handle != null) ...[
-            const SizedBox(width: 14),
-            Flexible(
-              child: Text(
-                handle!,
-                overflow: TextOverflow.ellipsis,
-                style: Broadcast.body(12, color: Broadcast.cyan),
-              ),
-            ),
-          ],
-        ],
+              const SizedBox(width: 6),
+              Text('on air',
+                  style: Broadcast.body(12, color: Broadcast.chalkDim)),
+            ],
+          );
+          final who = handle == null
+              ? const SizedBox.shrink()
+              : Text(
+                  handle!,
+                  overflow: TextOverflow.ellipsis,
+                  style: Broadcast.body(12, color: Broadcast.cyan),
+                );
+
+          // At phone width the title, the light and a Handle do not fit on one
+          // line, and squeezing them truncates the Handle to nothing useful.
+          if (narrow) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [Flexible(child: title), onAir],
+                ),
+                if (handle != null) ...[const SizedBox(height: 3), who],
+              ],
+            );
+          }
+          return Row(
+            children: [
+              Expanded(child: title),
+              const SizedBox(width: 12),
+              onAir,
+              if (handle != null) ...[
+                const SizedBox(width: 14),
+                Flexible(child: who),
+              ],
+            ],
+          );
+        },
       );
 }
 
@@ -343,6 +374,10 @@ class _ThemeStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final slot = round.openSlot;
+    final counter = slot < 0
+        ? 'between rounds'
+        : 'question ${slot + 1} of ${round.slotCount}';
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
@@ -351,21 +386,33 @@ class _ThemeStrip extends StatelessWidget {
         border: Border.all(color: Broadcast.podiumEdge, width: 2),
         boxShadow: Broadcast.bevel,
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Flexible(
-            child: Text(
-              round.theme,
-              overflow: TextOverflow.ellipsis,
-              style: Broadcast.body(13, color: Broadcast.cyan),
-            ),
-          ),
-          Text(
-            slot < 0 ? 'between rounds' : 'question ${slot + 1} of ${round.slotCount}',
+      child: LayoutBuilder(
+        builder: (context, box) {
+          final theme = Text(
+            round.theme,
+            overflow: TextOverflow.ellipsis,
+            style: Broadcast.body(13, color: Broadcast.cyan),
+          );
+          final count = Text(
+            counter,
             style: Broadcast.body(13, color: Broadcast.chalkDim),
-          ),
-        ],
+          );
+          // Side by side, a long Theme ellipsises straight into the counter
+          // with no gap between them. Below a certain width they stack instead.
+          if (box.maxWidth < 420) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [theme, const SizedBox(height: 2), count],
+            );
+          }
+          return Row(
+            children: [
+              Flexible(child: theme),
+              const SizedBox(width: 16),
+              count,
+            ],
+          );
+        },
       ),
     );
   }
@@ -400,23 +447,26 @@ class _Stage extends StatelessWidget {
       builder: (context, box) {
         final narrow = box.maxWidth < 520;
         return Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            const SizedBox(height: 14),
-            Flexible(
-              child: Center(
-                child: Text(
-                  question.prompt,
-                  textAlign: TextAlign.center,
-                  style: Broadcast.body(
-                    narrow ? 20 : 26,
-                    weight: FontWeight.w700,
-                  ),
+            const SizedBox(height: 10),
+            // A prompt is read fastest at roughly 40 characters a line; the
+            // full 720 of the stage runs long enough that the eye loses the
+            // start of the next line.
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 580),
+              child: Text(
+                question.prompt,
+                textAlign: TextAlign.center,
+                style: Broadcast.body(
+                  narrow ? 20 : 25,
+                  weight: FontWeight.w700,
                 ),
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 22),
             _PhaseBar(question: question, phase: phase, now: now, points: points),
-            const SizedBox(height: 14),
+            const SizedBox(height: 18),
             // Choices stay hidden while the prompt is being read. Showing them
             // greyed out just means everyone reads them anyway and the read
             // phase becomes a stare.
@@ -551,37 +601,40 @@ class _PointsMeter extends StatelessWidget {
     final filled = (left * _cells).round().clamp(0, _cells);
 
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text('${seconds}s',
-                style: Broadcast.body(13, color: Broadcast.chalkDim)),
-            const SizedBox(width: 12),
-            Text('$worth',
-                style: Broadcast.display(26, color: colour).copyWith(
-                  shadows: [
-                    Shadow(color: colour.withValues(alpha: 0.5), blurRadius: 14),
-                  ],
-                )),
-          ],
-        ),
-        const SizedBox(height: 6),
+        Text('$worth',
+            style: Broadcast.display(30, color: colour).copyWith(
+              shadows: [
+                Shadow(color: colour.withValues(alpha: 0.5), blurRadius: 16),
+              ],
+            )),
+        Text('points, ${seconds}s left',
+            style: Broadcast.body(11, color: Broadcast.chalkDim)),
+        const SizedBox(height: 7),
         Semantics(
           label: 'worth $worth points, $seconds seconds left',
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              for (var i = 0; i < _cells; i++)
-                Container(
-                  width: 7,
-                  height: 13,
-                  margin: const EdgeInsets.symmetric(horizontal: 1),
-                  color: i < filled
-                      ? colour
-                      : Broadcast.podium.withValues(alpha: 0.7),
-                ),
-            ],
+          child: Container(
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              color: Broadcast.setDeep,
+              border: Border.all(color: Broadcast.podiumEdge, width: 2),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (var i = 0; i < _cells; i++)
+                  Container(
+                    width: 7,
+                    height: 14,
+                    margin: const EdgeInsets.symmetric(horizontal: 1),
+                    // The empty cells have to be visible, or the meter reads as
+                    // a floating blob drifting left rather than a gauge
+                    // emptying inside a track.
+                    color: i < filled ? colour : const Color(0xFF243070),
+                  ),
+              ],
+            ),
           ),
         ),
       ],
@@ -685,7 +738,7 @@ class _Podium extends StatelessWidget {
   double get _dim {
     if (!_revealing) return 1;
     // Everything that is neither the answer nor your guess steps back.
-    return isCorrect || chosen ? 1 : 0.4;
+    return isCorrect || chosen ? 1 : 0.55;
   }
 
   String? get _tag {

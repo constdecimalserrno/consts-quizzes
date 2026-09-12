@@ -173,7 +173,7 @@ void main() {
     );
 
     expect(find.text('820'), findsOneWidget);
-    expect(find.text('8s'), findsOneWidget);
+    expect(find.text('points, 8s left'), findsOneWidget);
   });
 
   testWidgets('the meter is worth less later in the Window', (tester) async {
