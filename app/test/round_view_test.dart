@@ -298,6 +298,33 @@ void main() {
       expect(find.text('correct'), findsOneWidget);
     });
 
+    testWidgets('shows nothing right or wrong until the answer arrives',
+        (tester) async {
+      final sink = _FakeSink();
+      final controller = StreamController<LiveRound?>();
+      addTearDown(controller.close);
+      final clock = _FixedClock(inAnswer);
+      await _pump(tester, controller.stream, clock, sink: sink);
+
+      controller.add(_round(openSlot: 0, now: 0));
+      await tester.pump(Duration.zero);
+      await tester.pump();
+      await tester.tap(find.text('London'));
+      await tester.pump();
+
+      // Window shut, answer not yet published. Calling the Player's own pick
+      // wrong here flashed "not this one" a second before the right Choice
+      // lit up.
+      clock.fixed = inReveal;
+      controller.add(_round(openSlot: 0, now: 0));
+      await tester.pump(Duration.zero);
+      await tester.pump();
+
+      expect(find.text('not this one'), findsNothing);
+      expect(find.text('correct'), findsNothing);
+      expect(find.text('checking…'), findsOneWidget);
+    });
+
     testWidgets('congratulates a Player who got it', (tester) async {
       final sink = _FakeSink();
       final controller = StreamController<LiveRound?>();
@@ -316,7 +343,24 @@ void main() {
       await tester.pump(Duration.zero);
       await tester.pump();
 
-      expect(find.text('you got it'), findsOneWidget);
+      // The score landing is the congratulation.
+      expect(find.textContaining('+'), findsOneWidget);
+    });
+
+    testWidgets('shows what was locked in while the Window runs',
+        (tester) async {
+      final sink = _FakeSink();
+      await _pump(
+        tester,
+        Stream.value(_round(openSlot: 0, now: 0)),
+        _FixedClock(inAnswer),
+        sink: sink,
+      );
+
+      await tester.tap(find.text('Paris'));
+      await tester.pump();
+
+      expect(find.textContaining('locked in '), findsOneWidget);
     });
 
     testWidgets('marks a wrong pick as wrong rather than dropping it',
@@ -482,7 +526,7 @@ void main() {
       await tester.pump();
 
       expect(sink.submitted, ['Rome']);
-      expect(find.text('locked in'), findsOneWidget);
+      expect(find.textContaining('locked in'), findsOneWidget);
     });
 
     testWidgets('gives nothing to tap during the read phase', (tester) async {
@@ -547,12 +591,12 @@ void main() {
       await tester.pump();
       await tester.tap(find.text('Rome'));
       await tester.pump();
-      expect(find.text('locked in'), findsOneWidget);
+      expect(find.textContaining('locked in'), findsOneWidget);
 
       controller.add(_round(openSlot: 1, now: 0));
       await tester.pump(Duration.zero);
       await tester.pump();
-      expect(find.text('locked in'), findsNothing);
+      expect(find.textContaining('locked in'), findsNothing);
 
       await tester.tap(find.text('Paris'));
       await tester.pump();
@@ -569,7 +613,7 @@ void main() {
       await tester.tap(find.text('Rome'), warnIfMissed: false);
       await tester.pump();
 
-      expect(find.text('locked in'), findsNothing);
+      expect(find.textContaining('locked in'), findsNothing);
     });
   });
 
@@ -717,7 +761,7 @@ void main() {
       expect(find.text('d-4'), findsOneWidget);
     });
 
-    testWidgets('runs the rail the full height of the stage', (tester) async {
+    testWidgets('heads the rail with the Theme', (tester) async {
       tester.view.physicalSize = const Size(1280, 900);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
@@ -732,12 +776,11 @@ void main() {
         ),
       );
 
-      // A short panel with a column of nothing under it reads as unfinished.
-      final rail = tester.getSize(find.ancestor(
-        of: find.text('leaders'),
-        matching: find.byType(DecoratedBox),
-      ).first);
-      expect(rail.height, greaterThan(300));
+      // The Theme card fills the top of the rail, so an empty standings panel
+      // is a short card under it rather than a tall empty box.
+      final theme = tester.getTopLeft(find.text('Geography').first);
+      final leaders = tester.getTopLeft(find.text('leaders'));
+      expect(theme.dy, lessThan(leaders.dy));
     });
 
     testWidgets('stacks the standings under the stage at phone width',
@@ -1045,7 +1088,7 @@ void main() {
 
       // Better an inert podium than a write the rules throw away.
       expect(sink.submitted, isEmpty);
-      expect(find.text('locked in'), findsNothing);
+      expect(find.textContaining('locked in'), findsNothing);
     });
 
     testWidgets('says why a visitor is only watching when the Round is full',

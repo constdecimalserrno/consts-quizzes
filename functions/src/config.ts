@@ -64,7 +64,7 @@ export type AppConfig = {
 
 export const DEFAULT_CONFIG: AppConfig = {
   slotsPerRound: 20,
-  readSeconds: 3,
+  readSeconds: 5,
   answerSeconds: 10,
   revealSeconds: 4,
   transitionSeconds: 2,
