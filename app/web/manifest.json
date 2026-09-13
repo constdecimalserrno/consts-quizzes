@@ -1,12 +1,12 @@
 {
-    "name": "consts_quizzes",
-    "short_name": "consts_quizzes",
+    "name": "const's quizzes",
+    "short_name": "const's quizzes",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
-    "orientation": "portrait-primary",
+    "background_color": "#080C33",
+    "theme_color": "#080C33",
+    "description": "A trivia broadcast that never stops.",
+    "orientation": "any",
     "prefer_related_applications": false,
     "icons": [
         {
