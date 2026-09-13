@@ -7,7 +7,20 @@ the provider is not switched on yet.
 
 Everything below is done once. None of it changes any code.
 
-## Google — about two minutes
+## X — run the wizard
+
+    ./scripts/setup-x-signin.sh
+
+It opens each page, tells you exactly what to click, and hands the two keys
+straight to Firebase Auth. They are never written to disk and never echoed.
+The steps are also written out below if you would rather do it by hand.
+
+## Google — done
+
+Enabled. Verified by reading the provider back:
+`google.com | enabled: True | clientId set: True`.
+
+The original steps, for reference — about two minutes
 
 1. Open the [sign-in providers page](https://console.firebase.google.com/project/consts-quizzes/authentication/providers).
 2. Add provider, Google, enable.
