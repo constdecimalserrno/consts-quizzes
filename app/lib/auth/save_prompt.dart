@@ -64,67 +64,67 @@ class _SavePromptState extends State<SavePrompt> {
 
   @override
   Widget build(BuildContext context) => Container(
-        margin: const EdgeInsets.only(top: 12),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Broadcast.setNavy,
-          border: Border.all(color: Broadcast.gold, width: 2),
-          boxShadow: Broadcast.bevel,
+    margin: const EdgeInsets.only(top: 12),
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(
+      color: Broadcast.setNavy,
+      border: Border.all(color: Broadcast.gold, width: 2),
+      boxShadow: Broadcast.bevel,
+    ),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          'You scored ${widget.score}. Keep it?',
+          textAlign: TextAlign.center,
+          style: Broadcast.body(15, weight: FontWeight.w700),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'You scored ${widget.score}. Keep it?',
-              textAlign: TextAlign.center,
-              style: Broadcast.body(15, weight: FontWeight.w700),
+        const SizedBox(height: 4),
+        Text(
+          'Without an account this disappears when your browser forgets you.',
+          textAlign: TextAlign.center,
+          style: Broadcast.body(11, color: Broadcast.chalkDim),
+        ),
+        const SizedBox(height: 12),
+        if (_message != null)
+          Text(
+            _message!,
+            textAlign: TextAlign.center,
+            style: Broadcast.body(12, color: Broadcast.cyan),
+          )
+        else if (_busy)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
             ),
-            const SizedBox(height: 4),
-            Text(
-              'Without an account this disappears when your browser forgets you.',
-              textAlign: TextAlign.center,
+          )
+        else
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.center,
+            children: [
+              for (final p in Provider.values)
+                _SaveButton(label: p.label, onTap: () => _try(p)),
+            ],
+          ),
+        const SizedBox(height: 8),
+        InkWell(
+          onTap: widget.onDismiss,
+          child: Padding(
+            padding: const EdgeInsets.all(4),
+            child: Text(
+              'not now',
               style: Broadcast.body(11, color: Broadcast.chalkDim),
             ),
-            const SizedBox(height: 12),
-            if (_message != null)
-              Text(
-                _message!,
-                textAlign: TextAlign.center,
-                style: Broadcast.body(12, color: Broadcast.cyan),
-              )
-            else if (_busy)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8),
-                child: SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              )
-            else
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                alignment: WrapAlignment.center,
-                children: [
-                  for (final p in Provider.values)
-                    _SaveButton(label: p.label, onTap: () => _try(p)),
-                ],
-              ),
-            const SizedBox(height: 8),
-            InkWell(
-              onTap: widget.onDismiss,
-              child: Padding(
-                padding: const EdgeInsets.all(4),
-                child: Text(
-                  'not now',
-                  style: Broadcast.body(11, color: Broadcast.chalkDim),
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
-      );
+      ],
+    ),
+  );
 }
 
 class _SaveButton extends StatelessWidget {
@@ -135,16 +135,16 @@ class _SaveButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Material(
-        color: Broadcast.podium,
-        child: InkWell(
-          onTap: onTap,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            decoration: BoxDecoration(
-              border: Border.all(color: Broadcast.podiumEdge, width: 2),
-            ),
-            child: Text(label, style: Broadcast.body(13)),
-          ),
+    color: Broadcast.podium,
+    child: InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          border: Border.all(color: Broadcast.podiumEdge, width: 2),
         ),
-      );
+        child: Text(label, style: Broadcast.body(13)),
+      ),
+    ),
+  );
 }

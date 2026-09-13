@@ -123,8 +123,7 @@ class LiveRound {
   /// The id is fixed by the Player and the Slot, which is what lets the rules
   /// say "once, and only for the Slot that is open" without trusting anything
   /// the client sends.
-  String answerPath(String uid) =>
-      'rounds/$id/answers/${openSlot}_$uid';
+  String answerPath(String uid) => 'rounds/$id/answers/${openSlot}_$uid';
 
   static LiveRound? fromSnapshot(DocumentSnapshot<Map<String, dynamic>> snap) {
     final d = snap.data();

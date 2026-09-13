@@ -22,9 +22,8 @@ class FirestoreAnswerSink implements AnswerSink {
   final String uid;
 
   @override
-  Future<void> submit(LiveRound round, String choice) => db
-      .doc(round.answerPath(uid))
-      .set({
+  Future<void> submit(LiveRound round, String choice) =>
+      db.doc(round.answerPath(uid)).set({
         'uid': uid,
         'slot': round.openSlot,
         'choice': choice,

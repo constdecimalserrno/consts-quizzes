@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:consts_quizzes/round/answering.dart';
 import 'package:consts_quizzes/round/leaderboard.dart';
 import 'package:consts_quizzes/round/round.dart';
+import 'package:consts_quizzes/round/seating.dart';
 import 'package:consts_quizzes/round/round_view.dart';
 import 'package:consts_quizzes/round/server_clock.dart';
 import 'package:flutter/material.dart';
@@ -85,6 +86,20 @@ bool _choiceVisible(WidgetTester tester, String text) {
 /// double rather than of the widget.
 Stream<T> _broadcast<T>(T value) => Stream<T>.value(value).asBroadcastStream();
 
+/// Seats whoever asks, in whatever Round they ask about.
+class _FakeSeating implements Seating {
+  _FakeSeating({this.seated = true, this.refusal});
+  final bool seated;
+  final String? refusal;
+  final asked = <String>[];
+
+  @override
+  Future<Seat> take(String roundId) async {
+    asked.add(roundId);
+    return Seat(roundId: roundId, seated: seated, refusal: refusal);
+  }
+}
+
 /// Records what was submitted, and can be told to refuse.
 class _FakeSink implements AnswerSink {
   final submitted = <String>[];
@@ -104,7 +119,7 @@ Future<void> _pump(
   AnswerSink? sink,
   Stream<LiveBoard>? boards,
   String? uid,
-  String? refusal,
+  Seating? seating,
   Stream<AllTimeBoard>? allTime,
   Stream<AllTimeBoard>? bots,
 }) async {
@@ -117,7 +132,9 @@ Future<void> _pump(
         sink: sink,
         boards: boards,
         uid: uid,
-        refusal: refusal,
+        // A sink is not enough to answer any more: a seat is needed too, so
+        // tests that submit an Answer default to holding one.
+        seating: seating ?? _FakeSeating(),
         allTime: allTime,
         bots: bots,
       ),
@@ -233,6 +250,7 @@ void main() {
       Stream.value(_round(openSlot: 0, now: 0)),
       _FixedClock(readMs + answerMs - 250),
       sink: sink,
+        seating: _FakeSeating(),
     );
 
     await tester.tap(find.text('Paris'), warnIfMissed: false);
@@ -327,6 +345,7 @@ void main() {
         Stream.value(_round(openSlot: 0, now: 0, correct: 'Paris')),
         _FixedClock(inReveal),
         sink: sink,
+        seating: _FakeSeating(),
       );
 
       await tester.tap(find.text('Rome'), warnIfMissed: false);
@@ -452,6 +471,7 @@ void main() {
         Stream.value(_round(openSlot: 0, now: 0)),
         _FixedClock(inAnswer),
         sink: sink,
+        seating: _FakeSeating(),
       );
 
       await tester.tap(find.text('Rome'));
@@ -468,6 +488,7 @@ void main() {
         Stream.value(_round(openSlot: 0, now: 0)),
         _FixedClock(inRead),
         sink: sink,
+        seating: _FakeSeating(),
       );
 
       await tester.tap(find.text('Rome'), warnIfMissed: false);
@@ -484,6 +505,7 @@ void main() {
         Stream.value(_round(openSlot: 0, now: 0)),
         _FixedClock(inAnswer),
         sink: sink,
+        seating: _FakeSeating(),
       );
 
       await tester.tap(find.text('Rome'));
@@ -501,6 +523,7 @@ void main() {
         Stream.value(_round(openSlot: 0, now: 0)),
         _FixedClock(inAnswer),
         sink: sink,
+        seating: _FakeSeating(),
       );
 
       await tester.tap(find.text('Rome'));
@@ -908,13 +931,75 @@ void main() {
   });
 
   group('seats', () {
+    testWidgets('takes a seat again when a new Round starts', (tester) async {
+      // Seats belong to a Round. Asking once at page load seated the Player in
+      // whatever Round was running then, and every Round after it refused
+      // their Answers — which the screen reported as "too late".
+      final seating = _FakeSeating();
+      final controller = StreamController<LiveRound?>();
+      addTearDown(controller.close);
+      await _pump(tester, controller.stream, _FixedClock(inAnswer),
+          seating: seating);
+
+      controller.add(_round(openSlot: 0, now: 0));
+      await tester.pump(Duration.zero);
+      await tester.pump();
+      expect(seating.asked, ['r1']);
+
+      // Same Round, next Slot: no need to ask again.
+      controller.add(_round(openSlot: 1, now: 0));
+      await tester.pump(Duration.zero);
+      await tester.pump();
+      expect(seating.asked, ['r1']);
+
+      controller.add(LiveRound(
+        id: 'r2',
+        theme: 'Geography',
+        slotCount: 20,
+        openSlot: 0,
+        nextRoundAt: 60000,
+        question: const OpenQuestion(
+          slot: 0,
+          prompt: 'Another Question?',
+          choices: ['a', 'b'],
+          difficulty: 'easy',
+          startsAt: 0,
+          opensAt: readMs,
+          closesAt: readMs + answerMs,
+          revealUntil: readMs + answerMs + revealMs,
+          endsAt: readMs + answerMs + revealMs + idleMs,
+        ),
+      ));
+      await tester.pump(Duration.zero);
+      await tester.pump();
+      expect(seating.asked, ['r1', 'r2']);
+    });
+
+    testWidgets('will not take a tap without a seat', (tester) async {
+      final sink = _FakeSink();
+      await _pump(
+        tester,
+        Stream.value(_round(openSlot: 0, now: 0)),
+        _FixedClock(inAnswer),
+        sink: sink,
+        seating: _FakeSeating(seated: false, refusal: 'full'),
+      );
+
+      await tester.tap(find.text('Rome'), warnIfMissed: false);
+      await tester.pump();
+
+      // Better an inert podium than a write the rules throw away.
+      expect(sink.submitted, isEmpty);
+      expect(find.text('locked in'), findsNothing);
+    });
+
     testWidgets('says why a visitor is only watching when the Round is full',
         (tester) async {
       await _pump(
         tester,
         Stream.value(_round(openSlot: 0, now: 0)),
         _FixedClock(inAnswer),
-        refusal: 'full',
+        seating: _FakeSeating(seated: false, refusal: 'full'),
       );
 
       expect(find.textContaining('is at capacity'), findsOneWidget);
@@ -926,7 +1011,7 @@ void main() {
         tester,
         Stream.value(_round(openSlot: 0, now: 0)),
         _FixedClock(inAnswer),
-        refusal: 'busy',
+        seating: _FakeSeating(seated: false, refusal: 'busy'),
       );
 
       // Not "full": there is room, they just collided with everyone else.
@@ -940,7 +1025,7 @@ void main() {
         tester,
         Stream.value(_round(openSlot: 0, now: 0)),
         _FixedClock(inAnswer),
-        refusal: 'closed',
+        seating: _FakeSeating(seated: false, refusal: 'closed'),
       );
 
       expect(find.textContaining('on a break'), findsOneWidget);

@@ -60,28 +60,30 @@ abstract final class Broadcast {
         letterSpacing: size * 0.01,
       );
 
-  static TextStyle body(double size,
-          {Color color = chalk, FontWeight weight = FontWeight.w600}) =>
-      GoogleFonts.archivo(
-        fontSize: size,
-        color: color,
-        fontWeight: weight,
-        height: 1.25,
-      );
+  static TextStyle body(
+    double size, {
+    Color color = chalk,
+    FontWeight weight = FontWeight.w600,
+  }) => GoogleFonts.archivo(
+    fontSize: size,
+    color: color,
+    fontWeight: weight,
+    height: 1.25,
+  );
 
   /// The hard offset shadow that makes a podium look like an object.
   static List<BoxShadow> get bevel => const [
-        BoxShadow(color: Color(0xFF000B33), offset: Offset(0, 5), blurRadius: 0),
-      ];
+    BoxShadow(color: Color(0xFF000B33), offset: Offset(0, 5), blurRadius: 0),
+  ];
 
   static BoxDecoration get set => const BoxDecoration(
-        gradient: RadialGradient(
-          center: Alignment(0, -0.35),
-          radius: 1.1,
-          colors: [setViolet, setNavy, setDeep],
-          stops: [0, 0.55, 1],
-        ),
-      );
+    gradient: RadialGradient(
+      center: Alignment(0, -0.35),
+      radius: 1.1,
+      colors: [setViolet, setNavy, setDeep],
+      stops: [0, 0.55, 1],
+    ),
+  );
 }
 
 /// Scanlines over the whole set.
@@ -94,8 +96,8 @@ class Scanlines extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => IgnorePointer(
-        child: CustomPaint(size: Size.infinite, painter: _ScanlinePainter()),
-      );
+    child: CustomPaint(size: Size.infinite, painter: _ScanlinePainter()),
+  );
 }
 
 class _ScanlinePainter extends CustomPainter {

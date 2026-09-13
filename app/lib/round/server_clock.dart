@@ -55,6 +55,5 @@ class ServerClock {
   Timer keepSynced(
     Uri endpoint, {
     Duration every = const Duration(minutes: 5),
-  }) =>
-      Timer.periodic(every, (_) => resync(endpoint));
+  }) => Timer.periodic(every, (_) => resync(endpoint));
 }

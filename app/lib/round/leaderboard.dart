@@ -52,7 +52,6 @@ class LiveBoard {
   }
 }
 
-
 /// A Player's standing across every Round they have played.
 class CareerStanding {
   const CareerStanding({

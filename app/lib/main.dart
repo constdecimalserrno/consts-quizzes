@@ -8,13 +8,15 @@ import 'firebase_options.dart';
 import 'round/answering.dart';
 import 'round/leaderboard.dart';
 import 'round/round.dart';
+import 'round/seating.dart';
 import 'round/round_view.dart';
 import 'round/server_clock.dart';
 import 'theme/broadcast.dart';
 
 const _region = 'us-central1';
-final _serverTime =
-    Uri.parse('https://$_region-consts-quizzes.cloudfunctions.net/serverTime');
+final _serverTime = Uri.parse(
+  'https://$_region-consts-quizzes.cloudfunctions.net/serverTime',
+);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -26,13 +28,7 @@ Future<void> main() async {
 ///
 /// Sign-in and `ensurePlayer` are both idempotent: a returning visitor keeps
 /// the uid the SDK persisted and the Handle minted the first time.
-typedef TunedIn = ({
-  String handle,
-  ServerClock clock,
-  String uid,
-  bool seated,
-  String? refusal,
-});
+typedef TunedIn = ({String handle, ServerClock clock, String uid});
 
 Future<TunedIn> _tuneIn() async {
   final auth = FirebaseAuth.instance;
@@ -41,15 +37,14 @@ Future<TunedIn> _tuneIn() async {
   final clock = await ServerClock.sync(_serverTime);
   // Left running for the life of the page: see `keepSynced`.
   clock.keepSynced(_serverTime);
-  final result =
-      await FirebaseFunctions.instance.httpsCallable('ensurePlayer').call();
+  final result = await FirebaseFunctions.instance
+      .httpsCallable('ensurePlayer')
+      .call();
   final data = result.data as Map;
   return (
     handle: data['handle'] as String,
     clock: clock,
     uid: auth.currentUser!.uid,
-    seated: data['seated'] as bool? ?? false,
-    refusal: data['reason'] as String?,
   );
 }
 
@@ -78,15 +73,15 @@ class ConstsQuizzesApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-        title: "const's quizzes",
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          brightness: Brightness.dark,
-          scaffoldBackgroundColor: Broadcast.setDeep,
-          useMaterial3: true,
-        ),
-        home: const _TuneIn(),
-      );
+    title: "const's quizzes",
+    debugShowCheckedModeBanner: false,
+    theme: ThemeData(
+      brightness: Brightness.dark,
+      scaffoldBackgroundColor: Broadcast.setDeep,
+      useMaterial3: true,
+    ),
+    home: const _TuneIn(),
+  );
 }
 
 class _TuneIn extends StatefulWidget {
@@ -101,47 +96,47 @@ class _TuneInState extends State<_TuneIn> {
 
   @override
   Widget build(BuildContext context) => FutureBuilder<TunedIn>(
-        future: _ready,
-        builder: (context, snap) {
-          if (snap.hasError) {
-            return Scaffold(
-              body: DecoratedBox(
-                decoration: Broadcast.set,
-                child: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(28),
-                    child: Text(
-                      "The broadcast didn't reach you. Reload to try again.",
-                      textAlign: TextAlign.center,
-                      style: Broadcast.body(16),
-                    ),
-                  ),
+    future: _ready,
+    builder: (context, snap) {
+      if (snap.hasError) {
+        return Scaffold(
+          body: DecoratedBox(
+            decoration: Broadcast.set,
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(28),
+                child: Text(
+                  "The broadcast didn't reach you. Reload to try again.",
+                  textAlign: TextAlign.center,
+                  style: Broadcast.body(16),
                 ),
               ),
-            );
-          }
-          final ready = snap.data;
-          return RoundView(
-            rounds: _liveRounds(),
-            clock: ready?.clock ?? ServerClock(),
-            handle: ready?.handle,
-            // Absent until sign-in lands, and absent for a visitor with no
-            // seat: podiums stay inert rather than accepting taps the rules
-            // would refuse anyway.
-            sink: ready == null || !ready.seated
-                ? null
-                : FirestoreAnswerSink(
-                    db: FirebaseFirestore.instance,
-                    uid: ready.uid,
-                  ),
-            refusal: ready?.refusal,
-            boards: _liveBoard(),
-            allTime: _allTimeBoard(),
-            bots: _botBoard(),
-            uid: ready?.uid,
-            anonymous: FirebaseAuth.instance.currentUser?.isAnonymous ?? false,
-            points: (max: 1000, min: 100),
-          );
-        },
+            ),
+          ),
+        );
+      }
+      final ready = snap.data;
+      return RoundView(
+        rounds: _liveRounds(),
+        clock: ready?.clock ?? ServerClock(),
+        handle: ready?.handle,
+        // Absent until sign-in lands: podiums stay inert rather than
+        // accepting taps the rules would refuse anyway.
+        sink: ready == null
+            ? null
+            : FirestoreAnswerSink(
+                db: FirebaseFirestore.instance,
+                uid: ready.uid,
+              ),
+        // A seat belongs to a Round, so it is retaken every Round.
+        seating: ready == null ? null : CallableSeating(),
+        boards: _liveBoard(),
+        allTime: _allTimeBoard(),
+        bots: _botBoard(),
+        uid: ready?.uid,
+        anonymous: FirebaseAuth.instance.currentUser?.isAnonymous ?? false,
+        points: (max: 1000, min: 100),
       );
+    },
+  );
 }

@@ -6,6 +6,7 @@ import '../auth/save_prompt.dart';
 import '../theme/broadcast.dart';
 import 'answering.dart';
 import 'leaderboard.dart';
+import 'seating.dart';
 import 'round.dart';
 import 'server_clock.dart';
 
@@ -22,7 +23,7 @@ class RoundView extends StatefulWidget {
     this.sink,
     this.boards,
     this.uid,
-    this.refusal,
+    this.seating,
     this.allTime,
     this.anonymous = false,
     this.bots,
@@ -41,8 +42,9 @@ class RoundView extends StatefulWidget {
   /// Used only to pick this Player out of the standings.
   final String? uid;
 
-  /// Why this visitor cannot answer: 'full', 'closed', or absent if they can.
-  final String? refusal;
+  /// Takes a seat in each new Round. Absent for a visitor who is only
+  /// watching.
+  final Seating? seating;
 
   final Stream<AllTimeBoard>? allTime;
 
@@ -81,6 +83,10 @@ class _RoundViewState extends State<RoundView> {
   /// is one document read where two would be two.
   StreamSubscription<LiveBoard>? _boardSub;
   LiveBoard _live = LiveBoard.empty;
+
+  /// A seat is per Round, so this is retaken every time the Round changes.
+  Seat? _seat;
+  String? _seatingFor;
 
   @override
   void initState() {
@@ -121,6 +127,16 @@ class _RoundViewState extends State<RoundView> {
     }
   }
 
+  /// Takes a seat in the Round on screen, once per Round.
+  void _seatFor(LiveRound round) {
+    final seating = widget.seating;
+    if (seating == null || _seatingFor == round.id) return;
+    _seatingFor = round.id;
+    seating.take(round.id).then((seat) {
+      if (mounted && _seatingFor == seat.roundId) setState(() => _seat = seat);
+    });
+  }
+
   void _resetIfNewSlot(LiveRound round) {
     final key = '${round.id}:${round.openSlot}';
     if (_pickedKey != key && _state != Answered.no) {
@@ -150,6 +166,7 @@ class _RoundViewState extends State<RoundView> {
               builder: (context, snap) {
                 if (!snap.hasData) return const _Standby();
                 final round = snap.data!;
+                _seatFor(round);
                 _resetIfNewSlot(round);
                 return _Broadcast(
                   round: round,
@@ -157,12 +174,15 @@ class _RoundViewState extends State<RoundView> {
                   handle: widget.handle,
                   picked: _picked,
                   state: _state,
-                  onPick: widget.sink == null
+                  // Nothing to press without a seat: the write would be
+                  // refused, and a refusal a Player cannot see the cause of is
+                  // worse than a podium that simply does not respond.
+                  onPick: widget.sink == null || _seat?.seated != true
                       ? null
                       : (choice) => _answer(round, choice),
                   boards: widget.boards,
                   uid: widget.uid,
-                  refusal: widget.refusal,
+                  refusal: _seat?.refusal,
                   allTime: widget.allTime,
                   bots: widget.bots,
                   points: widget.points,

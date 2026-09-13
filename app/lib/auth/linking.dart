@@ -7,20 +7,20 @@ enum Provider { google, apple, x }
 
 extension ProviderLabel on Provider {
   String get label => switch (this) {
-        Provider.google => 'Google',
-        Provider.apple => 'Apple',
-        Provider.x => 'X',
-      };
+    Provider.google => 'Google',
+    Provider.apple => 'Apple',
+    Provider.x => 'X',
+  };
 
   AuthProvider get authProvider => switch (this) {
-        Provider.google => GoogleAuthProvider(),
-        Provider.apple => AppleAuthProvider(),
-        // X keeps its own session, so without `force_login` whoever the
-        // browser is already signed in as gets linked silently, under a name
-        // the Player did not choose.
-        Provider.x => TwitterAuthProvider()
-          ..setCustomParameters({'force_login': 'true'}),
-      };
+    Provider.google => GoogleAuthProvider(),
+    Provider.apple => AppleAuthProvider(),
+    // X keeps its own session, so without `force_login` whoever the
+    // browser is already signed in as gets linked silently, under a name
+    // the Player did not choose.
+    Provider.x =>
+      TwitterAuthProvider()..setCustomParameters({'force_login': 'true'}),
+  };
 }
 
 enum LinkOutcome {
