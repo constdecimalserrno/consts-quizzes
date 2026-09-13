@@ -2,6 +2,8 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
+const _xProviderId = 'twitter.com';
+
 /// The providers a Player can attach to keep their progress.
 enum Provider { google, apple, x }
 
@@ -61,11 +63,10 @@ Future<LinkOutcome> link(Provider provider, {FirebaseAuth? auth}) async {
 
   try {
     final p = provider.authProvider;
-    if (kIsWeb) {
-      await before.linkWithPopup(p);
-    } else {
-      await before.linkWithProvider(p);
-    }
+    final credential = kIsWeb
+        ? await before.linkWithPopup(p)
+        : await before.linkWithProvider(p);
+    if (provider == Provider.x) await syncXProfile(credential);
     return LinkOutcome.linked;
   } on FirebaseAuthException catch (e) {
     switch (e.code) {
@@ -107,5 +108,42 @@ Future<LinkOutcome> _switchTo(
     return auth.currentUser != null
         ? LinkOutcome.switchedOnly
         : LinkOutcome.failed;
+  }
+}
+
+
+/// Pushes the X details of a link the server cannot see by itself.
+///
+/// The username and banner only exist in the credential X returns at link
+/// time. Whether the Player has actually linked X is checked server-side, so
+/// sending them is not the same as claiming them.
+Future<void> syncXProfile(UserCredential credential) async {
+  final info = credential.additionalUserInfo;
+  final username = info?.username;
+  if (username == null) return;
+
+  await FirebaseFunctions.instance.httpsCallable('syncXProfile').call({
+    'username': username,
+    'bannerUrl': info?.profile?['profile_banner_url'],
+  });
+}
+
+/// Disconnects X and removes what it contributed.
+///
+/// Both halves matter: unlinking without wiping leaves somebody looking at
+/// their own face on a page they thought they had disconnected.
+Future<bool> disconnectX({FirebaseAuth? auth}) async {
+  final a = auth ?? FirebaseAuth.instance;
+  final user = a.currentUser;
+  if (user == null) return false;
+
+  try {
+    await FirebaseFunctions.instance.httpsCallable('disconnectXProfile').call();
+    if (user.providerData.any((p) => p.providerId == _xProviderId)) {
+      await user.unlink(_xProviderId);
+    }
+    return true;
+  } catch (_) {
+    return false;
   }
 }

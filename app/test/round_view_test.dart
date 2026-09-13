@@ -122,6 +122,7 @@ Future<void> _pump(
   Seating? seating,
   Stream<AllTimeBoard>? allTime,
   Stream<AllTimeBoard>? bots,
+  void Function(String? uid)? onOpenProfile,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -129,6 +130,9 @@ Future<void> _pump(
         rounds: rounds,
         clock: clock,
         handle: 'jolly-teal-otter-777',
+        // Present by default: the Handle is the button that opens your page,
+        // so without a handler there is nothing to render it on.
+        onOpenProfile: onOpenProfile ?? (_) {},
         sink: sink,
         boards: boards,
         uid: uid,
@@ -630,6 +634,57 @@ void main() {
 
       expect(find.text('final scores'), findsOneWidget);
       expect(find.textContaining('of 20 right'), findsNothing);
+    });
+  });
+
+  group('opening a Player page', () {
+    testWidgets('your Handle opens your own', (tester) async {
+      String? opened;
+      var called = false;
+      await _pump(
+        tester,
+        Stream.value(_round(openSlot: 0, now: 0)),
+        _FixedClock(inAnswer),
+        onOpenProfile: (uid) {
+          opened = uid;
+          called = true;
+        },
+      );
+
+      await tester.tap(find.text('jolly-teal-otter-777'));
+      await tester.pump();
+
+      // Null means "whoever is watching".
+      expect(called, isTrue);
+      expect(opened, isNull);
+    });
+
+    testWidgets('a name in the standings opens theirs', (tester) async {
+      // The default test window is too short for the standings to be on screen.
+      tester.view.physicalSize = const Size(1280, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      String? opened;
+      await _pump(
+        tester,
+        Stream.value(_round(openSlot: 0, now: 0)),
+        _FixedClock(inAnswer),
+        boards: _broadcast(
+          const LiveBoard(
+            playing: 2,
+            slot: 0,
+            top: [Standing(uid: 'them', handle: 'somebody-else-404', score: 900)],
+          ),
+        ),
+        onOpenProfile: (uid) => opened = uid,
+      );
+
+      await tester.tap(find.text('somebody-else-404'));
+      await tester.pump();
+
+      expect(opened, 'them');
     });
   });
 

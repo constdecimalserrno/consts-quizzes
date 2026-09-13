@@ -10,6 +10,9 @@ import 'round/leaderboard.dart';
 import 'round/round.dart';
 import 'round/seating.dart';
 import 'round/round_view.dart';
+import 'auth/linking.dart';
+import 'profile/profile.dart';
+import 'profile/profile_drawer.dart';
 import 'round/server_clock.dart';
 import 'theme/broadcast.dart';
 
@@ -116,27 +119,119 @@ class _TuneInState extends State<_TuneIn> {
         );
       }
       final ready = snap.data;
-      return RoundView(
-        rounds: _liveRounds(),
-        clock: ready?.clock ?? ServerClock(),
-        handle: ready?.handle,
-        // Absent until sign-in lands: podiums stay inert rather than
-        // accepting taps the rules would refuse anyway.
-        sink: ready == null
-            ? null
-            : FirestoreAnswerSink(
-                db: FirebaseFirestore.instance,
-                uid: ready.uid,
-              ),
-        // A seat belongs to a Round, so it is retaken every Round.
-        seating: ready == null ? null : CallableSeating(),
-        boards: _liveBoard(),
-        allTime: _allTimeBoard(),
-        bots: _botBoard(),
-        uid: ready?.uid,
-        anonymous: FirebaseAuth.instance.currentUser?.isAnonymous ?? false,
-        points: (max: 1000, min: 100),
+      return _WithDrawer(
+        me: ready?.uid,
+        child: (openProfile) => RoundView(
+          onOpenProfile: openProfile,
+          rounds: _liveRounds(),
+          clock: ready?.clock ?? ServerClock(),
+          handle: ready?.handle,
+          // Absent until sign-in lands: podiums stay inert rather than
+          // accepting taps the rules would refuse anyway.
+          sink: ready == null
+              ? null
+              : FirestoreAnswerSink(
+                  db: FirebaseFirestore.instance,
+                  uid: ready.uid,
+                ),
+          // A seat belongs to a Round, so it is retaken every Round.
+          seating: ready == null ? null : CallableSeating(),
+          boards: _liveBoard(),
+          allTime: _allTimeBoard(),
+          bots: _botBoard(),
+          uid: ready?.uid,
+          anonymous: FirebaseAuth.instance.currentUser?.isAnonymous ?? false,
+          points: (max: 1000, min: 100),
+        ),
       );
     },
   );
+}
+
+/// Holds the Player page that slides in from the left.
+///
+/// One drawer serves both the person watching and anybody they tap in the
+/// standings, because it is the same page either way — only the buttons on it
+/// differ.
+class _WithDrawer extends StatefulWidget {
+  const _WithDrawer({required this.me, required this.child});
+
+  final String? me;
+  final Widget Function(void Function(String? uid) open) child;
+
+  @override
+  State<_WithDrawer> createState() => _WithDrawerState();
+}
+
+class _WithDrawerState extends State<_WithDrawer> {
+  final _scaffold = GlobalKey<ScaffoldState>();
+
+  /// Whose page is open. Null means the Player watching.
+  String? _showing;
+  bool _busy = false;
+  String? _message;
+
+  void _open(String? uid) {
+    setState(() {
+      _showing = uid;
+      _message = null;
+    });
+    _scaffold.currentState?.openDrawer();
+  }
+
+  Future<void> _connect(Provider provider) async {
+    setState(() => _busy = true);
+    final outcome = await link(provider);
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _message = switch (outcome) {
+        LinkOutcome.linked => 'Connected. Your scores are saved now.',
+        LinkOutcome.switchedAndMerged =>
+          'Welcome back — your scores have been combined.',
+        LinkOutcome.switchedOnly =>
+          "Signed in, but this round didn't transfer.",
+        LinkOutcome.cancelled => null,
+        LinkOutcome.unavailable =>
+          '${provider.label} sign-in is not switched on yet.',
+        LinkOutcome.failed => "That didn't work. Try again?",
+      };
+    });
+  }
+
+  Future<void> _disconnectX() async {
+    setState(() => _busy = true);
+    final done = await disconnectX();
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _message = done ? 'X disconnected.' : "Couldn't disconnect. Try again?";
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final uid = _showing ?? widget.me;
+    final isMe = _showing == null || _showing == widget.me;
+
+    return Scaffold(
+      key: _scaffold,
+      backgroundColor: Broadcast.setDeep,
+      drawerEnableOpenDragGesture: false,
+      drawer: uid == null
+          ? null
+          : StreamBuilder<Profile?>(
+              stream: watchProfile(uid),
+              builder: (context, snap) => ProfileDrawer(
+                profile: snap.data,
+                isMe: isMe,
+                onConnect: isMe ? _connect : null,
+                onDisconnectX: isMe ? _disconnectX : null,
+                busy: _busy,
+                message: _message,
+              ),
+            ),
+      body: widget.child(_open),
+    );
+  }
 }

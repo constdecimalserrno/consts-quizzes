@@ -14,6 +14,7 @@ import { verdict, type BudgetNotification } from './budget.js'
 import { mergePlayers } from './linking.js'
 import { isOpen, readConfig } from './config.js'
 import { ensurePlayer as ensurePlayerDoc } from './players.js'
+import { clearXProfile, saveXProfile } from './profiles.js'
 import { reap, type ReaperMode } from './reaper.js'
 import { LIVE_ROUND } from './round.js'
 import { takeSeat } from './seats.js'
@@ -90,6 +91,39 @@ export const claimAnonymousHistory = onCall(async (request) => {
 
   const result = await mergePlayers(db(), auth.uid, abandonedUid)
   return { merged: result.merged, career: result.career }
+})
+
+/**
+ * Records the X details of a Player who has just linked X.
+ *
+ * The username and banner arrive from the client because they exist nowhere
+ * else; whether the Player has linked X at all is checked here.
+ */
+export const syncXProfile = onCall(async (request) => {
+  const auth = request.auth
+  if (!auth) throw new HttpsError('unauthenticated', 'Sign in first.')
+
+  const user = await getAuth().getUser(auth.uid)
+  const saved = await saveXProfile(
+    db(),
+    user.providerData.map((p) => ({
+      providerId: p.providerId,
+      displayName: p.displayName,
+      photoURL: p.photoURL,
+    })),
+    auth.uid,
+    { username: request.data?.username, bannerUrl: request.data?.bannerUrl },
+  )
+  if (!saved) throw new HttpsError('failed-precondition', 'X is not linked.')
+  return saved
+})
+
+/** Removes a Player's X details when they disconnect. */
+export const disconnectXProfile = onCall(async (request) => {
+  const auth = request.auth
+  if (!auth) throw new HttpsError('unauthenticated', 'Sign in first.')
+  await clearXProfile(db(), auth.uid)
+  return { cleared: true }
 })
 
 /**

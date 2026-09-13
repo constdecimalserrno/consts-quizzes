@@ -29,13 +29,13 @@ abstract final class Broadcast {
   static const podiumEdge = Color(0xFF4B56C9);
 
   /// Stage only, when the standings are stacked beneath it.
-  static const wide = 720.0;
+  static const wide = 820.0;
 
   /// Stage plus the standings column beside it.
-  static const wideWithRail = 1000.0;
+  static const wideWithRail = 1280.0;
 
   /// The standings rail. Wide enough for a Handle and a five-figure score.
-  static const rail = 248.0;
+  static const rail = 276.0;
 
   /// Below this there is no room for a rail, so the standings go underneath.
   static const railBreakpoint = 900.0;
@@ -44,13 +44,13 @@ abstract final class Broadcast {
   /// Question is two lines instead of three, or when the Choices arrive, or
   /// when a phase changes. Things appearing should not shove what is already
   /// on screen.
-  static const promptBox = 112.0;
+  static const promptBox = 124.0;
   static const phaseBox = 88.0;
   static const podiumRow = 58.0;
 
   /// The stage keeps one height whatever is on it, so the Intermission does
   /// not resize the page on its way in and out.
-  static const stageBox = 420.0;
+  static const stageBox = 470.0;
 
   static TextStyle display(double size, {Color color = gold}) =>
       GoogleFonts.bungee(

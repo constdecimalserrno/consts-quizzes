@@ -28,6 +28,7 @@ class RoundView extends StatefulWidget {
     this.anonymous = false,
     this.bots,
     this.points = (max: 1000, min: 100),
+    this.onOpenProfile,
   });
 
   final Stream<LiveRound?> rounds;
@@ -55,6 +56,9 @@ class RoundView extends StatefulWidget {
 
   /// Scoring bounds, so the meter counts down real points.
   final ({int max, int min}) points;
+
+  /// Opens a Player's page. Null uid means whoever is watching.
+  final void Function(String? uid)? onOpenProfile;
 
   @override
   State<RoundView> createState() => _RoundViewState();
@@ -172,6 +176,7 @@ class _RoundViewState extends State<RoundView> {
                   round: round,
                   clock: widget.clock,
                   handle: widget.handle,
+                  onOpenProfile: widget.onOpenProfile,
                   picked: _picked,
                   state: _state,
                   // Nothing to press without a seat: the write would be
@@ -219,6 +224,7 @@ class _Broadcast extends StatelessWidget {
     required this.round,
     required this.clock,
     required this.handle,
+    required this.onOpenProfile,
     required this.picked,
     required this.state,
     required this.onPick,
@@ -236,6 +242,7 @@ class _Broadcast extends StatelessWidget {
   final LiveRound round;
   final ServerClock clock;
   final String? handle;
+  final void Function(String? uid)? onOpenProfile;
   final String? picked;
   final Answered state;
   final void Function(String choice)? onPick;
@@ -274,6 +281,7 @@ class _Broadcast extends StatelessWidget {
                 allTime: allTime,
                 bots: bots,
                 uid: uid,
+                onOpenProfile: onOpenProfile,
                 // In the rail there is room for the whole board all the time;
                 // stacked under the stage there is only room for the top few
                 // until a Round ends.
@@ -325,7 +333,7 @@ class _Broadcast extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _Marquee(handle: handle),
+                    _Marquee(handle: handle, onOpenProfile: onOpenProfile),
                     const SizedBox(height: 14),
                     // The Theme strip spans both columns: it belongs to the
                     // broadcast, not to the stage.
@@ -362,9 +370,10 @@ class _Broadcast extends StatelessWidget {
 
 /// The show's name, and the light that says this is happening right now.
 class _Marquee extends StatelessWidget {
-  const _Marquee({required this.handle});
+  const _Marquee({required this.handle, required this.onOpenProfile});
 
   final String? handle;
+  final void Function(String? uid)? onOpenProfile;
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
@@ -398,13 +407,7 @@ class _Marquee extends StatelessWidget {
           Text('on air', style: Broadcast.body(12, color: Broadcast.chalkDim)),
         ],
       );
-      final who = handle == null
-          ? const SizedBox.shrink()
-          : Text(
-              handle!,
-              overflow: TextOverflow.ellipsis,
-              style: Broadcast.body(12, color: Broadcast.cyan),
-            );
+      final who = _YouButton(handle: handle ?? '', onTap: onOpenProfile);
 
       // At phone width the title, the light and a Handle do not fit on one
       // line, and squeezing them truncates the Handle to nothing useful.
@@ -419,7 +422,7 @@ class _Marquee extends StatelessWidget {
                 onAir,
               ],
             ),
-            if (handle != null) ...[const SizedBox(height: 3), who],
+            if (onOpenProfile != null) ...[const SizedBox(height: 3), who],
           ],
         );
       }
@@ -428,7 +431,7 @@ class _Marquee extends StatelessWidget {
           Expanded(child: title),
           const SizedBox(width: 12),
           onAir,
-          if (handle != null) ...[
+          if (onOpenProfile != null) ...[
             const SizedBox(width: 14),
             Flexible(child: who),
           ],
@@ -538,16 +541,16 @@ class _Stage extends StatelessWidget {
               height: Broadcast.promptBox,
               child: Center(
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 580),
+                  constraints: const BoxConstraints(maxWidth: 660),
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
                     child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 580),
+                      constraints: const BoxConstraints(maxWidth: 660),
                       child: Text(
                         question.prompt,
                         textAlign: TextAlign.center,
                         style: Broadcast.body(
-                          narrow ? 20 : 25,
+                          narrow ? 21 : 28,
                           weight: FontWeight.w700,
                         ),
                       ),
@@ -802,7 +805,7 @@ class _Podiums extends StatelessWidget {
       spacing: 12,
       runSpacing: 12,
       alignment: WrapAlignment.center,
-      children: [for (final t in tiles) SizedBox(width: 330, child: t)],
+      children: [for (final t in tiles) SizedBox(width: 396, child: t)],
     );
   }
 }
@@ -932,9 +935,9 @@ class _Podium extends StatelessWidget {
                         // the space, so nothing moves when it arrives.
                         ? Opacity(
                             opacity: 0,
-                            child: Text(label, style: Broadcast.body(15)),
+                            child: Text(label, style: Broadcast.body(16)),
                           )
-                        : Text(label, style: Broadcast.body(15)),
+                        : Text(label, style: Broadcast.body(16)),
                   ),
                   if (tag != null)
                     Text(
@@ -1073,6 +1076,7 @@ class _Board extends StatefulWidget {
     required this.compact,
     required this.savePrompt,
     this.fill = false,
+    this.onOpenProfile,
   });
 
   final LiveBoard live;
@@ -1085,6 +1089,9 @@ class _Board extends StatefulWidget {
   /// In the rail, run the full height of the stage rather than shrinking to
   /// the handful of names on it.
   final bool fill;
+
+  /// Opens the page of whoever is tapped in the standings.
+  final void Function(String? uid)? onOpenProfile;
 
   @override
   State<_Board> createState() => _BoardState();
@@ -1131,6 +1138,7 @@ class _BoardState extends State<_Board> {
       final other = _AllTimePanel(
         careers: _view == 1 ? _careers : _botBoard,
         uid: widget.uid,
+        onOpenProfile: widget.onOpenProfile,
         title: _view == 1
             ? 'all time, by average round'
             : 'bots, by average round',
@@ -1148,6 +1156,7 @@ class _BoardState extends State<_Board> {
     final panel = _RoundPanel(
       board: widget.live,
       uid: widget.uid,
+      onOpenProfile: widget.onOpenProfile,
       compact: widget.compact,
       onAllTime: canSwitch ? () => setState(() => _view = 1) : null,
     );
@@ -1167,12 +1176,14 @@ class _RoundPanel extends StatelessWidget {
   const _RoundPanel({
     required this.board,
     required this.uid,
+    required this.onOpenProfile,
     required this.compact,
     required this.onAllTime,
   });
 
   final LiveBoard board;
   final String? uid;
+  final void Function(String? uid)? onOpenProfile;
   final bool compact;
   final VoidCallback? onAllTime;
 
@@ -1225,35 +1236,12 @@ class _RoundPanel extends StatelessWidget {
               ),
             ),
           for (final (i, s) in shown.indexed)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 22,
-                    child: Text(
-                      '${i + 1}',
-                      style: Broadcast.body(12, color: Broadcast.chalkDim),
-                    ),
-                  ),
-                  Expanded(
-                    child: Text(
-                      s.handle,
-                      overflow: TextOverflow.ellipsis,
-                      style: Broadcast.body(
-                        13,
-                        color: s.uid == uid
-                            ? Broadcast.magenta
-                            : Broadcast.chalk,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    '${s.score}',
-                    style: Broadcast.body(13, color: Broadcast.gold),
-                  ),
-                ],
-              ),
+            _StandingRow(
+              place: i + 1,
+              handle: s.handle,
+              trailing: '${s.score}',
+              isMe: s.uid == uid,
+              onTap: onOpenProfile == null ? null : () => onOpenProfile!(s.uid),
             ),
         ],
       ),
@@ -1282,6 +1270,7 @@ class _AllTimePanel extends StatelessWidget {
   const _AllTimePanel({
     required this.careers,
     required this.uid,
+    required this.onOpenProfile,
     required this.title,
     required this.emptyLine,
     required this.nextLabel,
@@ -1291,6 +1280,7 @@ class _AllTimePanel extends StatelessWidget {
 
   final AllTimeBoard careers;
   final String? uid;
+  final void Function(String? uid)? onOpenProfile;
   final String title;
   final String emptyLine;
   final String nextLabel;
@@ -1339,40 +1329,13 @@ class _AllTimePanel extends StatelessWidget {
               ),
             ),
           for (final (i, c) in top.indexed)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 22,
-                    child: Text(
-                      '${i + 1}',
-                      style: Broadcast.body(12, color: Broadcast.chalkDim),
-                    ),
-                  ),
-                  Expanded(
-                    child: Text(
-                      c.handle,
-                      overflow: TextOverflow.ellipsis,
-                      style: Broadcast.body(
-                        13,
-                        color: c.uid == uid
-                            ? Broadcast.magenta
-                            : Broadcast.chalk,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    'best ${c.bestRound}',
-                    style: Broadcast.body(11, color: Broadcast.chalkDim),
-                  ),
-                  const SizedBox(width: 10),
-                  Text(
-                    '${c.averageScore}',
-                    style: Broadcast.body(13, color: Broadcast.gold),
-                  ),
-                ],
-              ),
+            _StandingRow(
+              place: i + 1,
+              handle: c.handle,
+              subtitle: 'best ${c.bestRound}',
+              trailing: '${c.averageScore}',
+              isMe: c.uid == uid,
+              onTap: onOpenProfile == null ? null : () => onOpenProfile!(c.uid),
             ),
         ],
       ),
@@ -1422,4 +1385,108 @@ class _SavePromptSlot extends StatelessWidget {
   @override
   Widget build(BuildContext context) =>
       SavePrompt(score: score, onDismiss: onDismiss);
+}
+
+/// The way in to your own page.
+///
+/// Your Handle doubles as the button: it is already the thing on screen that
+/// means "you", so adding a separate icon beside it would be two of the same
+/// signpost.
+class _YouButton extends StatelessWidget {
+  const _YouButton({required this.handle, required this.onTap});
+
+  final String handle;
+  final void Function(String? uid)? onTap;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    label: 'your page',
+    child: InkWell(
+      onTap: onTap == null ? null : () => onTap!(null),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.person, size: 15, color: Broadcast.cyan),
+            if (handle.isNotEmpty) ...[
+              const SizedBox(width: 5),
+              Flexible(
+                child: Text(
+                  handle,
+                  overflow: TextOverflow.ellipsis,
+                  style: Broadcast.body(12, color: Broadcast.cyan),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+/// One line of the standings, and a way into that Player's page.
+///
+/// A name on a leaderboard is the one place you actually wonder who somebody
+/// is, so the row is the button rather than putting a separate control beside
+/// it.
+class _StandingRow extends StatelessWidget {
+  const _StandingRow({
+    required this.place,
+    required this.handle,
+    required this.trailing,
+    required this.isMe,
+    required this.onTap,
+    this.subtitle,
+  });
+
+  final int place;
+  final String handle;
+  final String trailing;
+  final String? subtitle;
+  final bool isMe;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: onTap != null,
+    label: '$handle, $trailing',
+    child: InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 22,
+              child: Text(
+                '$place',
+                style: Broadcast.body(12, color: Broadcast.chalkDim),
+              ),
+            ),
+            Expanded(
+              child: Text(
+                handle,
+                overflow: TextOverflow.ellipsis,
+                style: Broadcast.body(
+                  13,
+                  color: isMe ? Broadcast.magenta : Broadcast.chalk,
+                ),
+              ),
+            ),
+            if (subtitle != null) ...[
+              Text(
+                subtitle!,
+                style: Broadcast.body(11, color: Broadcast.chalkDim),
+              ),
+              const SizedBox(width: 10),
+            ],
+            Text(trailing, style: Broadcast.body(13, color: Broadcast.gold)),
+          ],
+        ),
+      ),
+    ),
+  );
 }
