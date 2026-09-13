@@ -1,6 +1,6 @@
 import struct, zlib
 NAVY=(0x08,0x0C,0x33); GOLD=(0xFF,0xC1,0x2B); MAGENTA=(0xFF,0x2E,0x88)
-BEVEL=(0x00,0x05,0x1F)
+CYAN=(0x35,0xE0,0xF2); SCREEN=(0x14,0x1B,0x5C); BEVEL=(0x00,0x05,0x1F)
 
 def png(path,size,px):
     raw=b''.join(b'\x00'+bytes(v for p in row for v in p) for row in px)
@@ -19,23 +19,25 @@ def draw(size, inset=0.0):
         for py in range(max(0,int(ay*u)),min(size,int(by*u+0.5))):
             for px in range(max(0,int(ax*u)),min(size,int(bx*u+0.5))):
                 buf[py][px]=c
-    # The game's own four podiums, one of them the answer. Four blocks survive
-    # sixteen pixels in a way a question mark does not.
-    gap, edge = 1.6, 4.0
-    span = (24 - edge*2 - gap) / 2
+    # The set itself: a television that is on. The old mark was four podiums,
+    # which at sixteen pixels is four squares and reads as a loading state; a
+    # lit screen says what the thing is — a broadcast that never stops.
+    if size >= 128:
+        rect(2.9, 3.9, 22.9, 18.9, BEVEL)          # the bevel under the set
+    rect(2, 3, 22, 18, GOLD)                        # the frame
+    rect(4, 5, 20, 16, SCREEN)                      # the glass
+    # On the glass: the four Choices, one of them lit. Three bars alone read
+    # as a list icon; four blocks with one picked out reads as the game being
+    # played, which is the point — a quiz, on air.
     for i in range(2):
         for j in range(2):
-            x = edge + i*(span+gap)
-            y = edge + j*(span+gap)
-            colour = MAGENTA if (i, j) == (1, 1) else GOLD
-            # The podium bevel, where there is room for it. At favicon size a
-            # one-pixel shadow is dirt on the glass.
-            if size >= 128:
-                rect(x+0.7, y+0.7, x+span+0.7, y+span+0.7, BEVEL)
-            rect(x, y, x+span, y+span, colour)
+            x = 5.6 + i*7.0
+            y = 6.4 + j*4.8
+            rect(x, y, x+6.2, y+3.6, MAGENTA if (i,j)==(1,1) else CYAN)
+    rect(9.5, 18, 14.5, 21, GOLD)                   # the stand
     return buf
 
 for n,s,i in [('favicon-32.png',32,0.0),('Icon-192.png',192,0.0),('Icon-512.png',512,0.0),
-              ('Icon-maskable-192.png',192,0.18),('Icon-maskable-512.png',512,0.18)]:
+              ('Icon-maskable-192.png',192,0.20),('Icon-maskable-512.png',512,0.20)]:
     png(n,s,draw(s,i))
 print('ok')

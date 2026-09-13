@@ -79,15 +79,23 @@ export async function tick(deps: TickDeps): Promise<TickResult> {
     const plan = round.slots[current]!
     const showing = round.question?.correct !== undefined
     if (now >= plan.closesAt && now < plan.revealUntil && !showing) {
-      const cfg = await readConfig(db)
-      await scoreSlot(db, round, current, cfg)
-      await publishLiveBoard(db, round.id, current, now)
-
+      // The answer goes out first, before anything is scored.
+      //
+      // It is already decided — scoring cannot change it — and scoring a
+      // whole Round's Answers and republishing the board took long enough
+      // that the screen sat on "checking…" for a second or more after the
+      // clock hit zero. The standings catching up a beat later is invisible;
+      // a pause before the reveal is the most conspicuous moment there is.
       const bank = await db.doc(`questions/${plan.questionId}`).get()
       await db.doc(LIVE_ROUND).set(
         { question: { correct: bank.data()?.correct ?? '' } },
         { merge: true },
       )
+
+      const cfg = await readConfig(db)
+      await scoreSlot(db, round, current, cfg)
+      await publishLiveBoard(db, round.id, current, now)
+
       await deps.schedule?.(plan.endsAt)
       return { action: 'revealed', slot: current }
     }
